@@ -1,0 +1,7 @@
+tensorflow==2
+gym
+joblib
+mujoco-py
+keras
+tqdm
+opencv-python
