@@ -3,7 +3,6 @@ warnings.filterwarnings('ignore')
 import os
 import pickle
 import numpy as np
-import matplotlib.pyplot as plt
 import gym
 import tensorflow as tf
 from keras.layers import Dense, Activation, Dropout, Input
@@ -48,7 +47,7 @@ class PolicyEstimator:
         # Neural network architecture
         self.l1_dims = 50
         self.l2_dims = 50
-        self.lr = 0.001
+        self.lr = 1e-3
         # Memory
         self.states, self.actions, self.rewards = [], [], []
         # Stats for tracking performance
@@ -60,6 +59,7 @@ class PolicyEstimator:
             self.policy_nn, self.predict_nn, self.value_nn = self.create_model(True)
         else:
             self.policy_nn, self.predict_nn = self.create_model()
+            self.value_nn = None
 
         if name:
             subdir_name = "/".join([self.env_name, name])
@@ -78,8 +78,8 @@ class PolicyEstimator:
         if baseline:
             v_input = Input(shape=self.input_shape)
             v_dense1 = Dense(self.l1_dims, activation="relu")(input)
-            v_dense2 = Dense(self.l2_dims, activation="relu")(dense1)
-            v_out = Dense(1, activation="linear")(dense2)
+            v_dense2 = Dense(self.l2_dims, activation="relu")(v_dense1)
+            v_out = Dense(1, activation="linear")(v_dense2)
             value_nn = Model(input=[input], output=[v_out])
             value_nn.compile(optimizer=Adam(lr=self.lr), loss='mse')
 
@@ -119,15 +119,8 @@ class PolicyEstimator:
         # One hot encoding of actions
         actions = np.zeros([len(action_memory), self.n_outputs])
         actions[np.arange(len(action_memory)), action_memory] = 1
-        G = np.zeros_like(reward_memory)  # Future reward vector
-        for t in range(len(reward_memory)):
-            G_t = 0
-            discount = 1
-            for k in range(t, len(reward_memory)):
-                G_t += reward_memory[k]*discount
-                discount *= self.gamma
-            G[t] = G_t
-
+        discount_filter = np.flip(self.gamma**np.arange(0, reward_memory.shape[0]))
+        G = np.convolve(reward_memory, discount_filter)[-reward_memory.shape[0]:]
         mean = np.mean(G)
         std = np.std(G) if np.std(G) > 0 else 1
         self.G_n = (G - mean) / std  # Train on normalized values
@@ -135,6 +128,8 @@ class PolicyEstimator:
         if self.baseline:
             self.advantages = self.G_n - np.squeeze(self.value_nn.predict(state_memory))
             self.value_nn.train_on_batch(state_memory, self.G_n)
+        else:
+            self.advantages = self.G_n
 
         cost = self.policy_nn.train_on_batch([state_memory, self.advantages], actions)
         self.clear_transitions()
@@ -170,29 +165,30 @@ if __name__ == "__main__":
     # acrobot_env = gym.make('Acrobot-v1')
     np.random.seed(1)
     LOAD_MODEL = None
-    #LOAD_MODEL = "Discount0.95"
+    #LOAD_MODEL = "NB0.99"
     gamma = 0.99
     use_b = True
     if LOAD_MODEL:
         agent = PolicyEstimator(env, LOAD_MODEL, gamma, use_b)
     else:
         agent = PolicyEstimator(env, None, gamma, use_b)
-
+    steps = []
     EPISODES = 3000
     # Iterate over episodes
 
     for episode in tqdm(range(1, EPISODES + 1), ascii=True, unit='episodes'):
         show = False
         if not episode % 1000 or LOAD_MODEL:
-            show = True
+            show = False
         current_state = env.reset()
         score, no_steps, fuel = 0, 0, 0
         # Reset flag and start iterating until episode ends
         done = False
+        start = timer()
         while not done:
             no_steps += 1  # Max steps
             action = agent.choose_action(current_state)
-            fuel = fuel+1 if action != 0 else fuel
+            #fuel = fuel+1 if action != 0 else fuel
             # _action = action if fuel < limit else 0  # One line hack for introducing fuel
             next_state, reward, done, _ = env.step(action)
             if show:
@@ -201,10 +197,17 @@ if __name__ == "__main__":
             current_state = next_state
             score += reward
         agent.update_stats(score)
+        ep_time = timer() - start
+        steps.append(no_steps)
         start = timer()
         agent.learn()
         training_time = timer() - start
-        if not episode % 100:
-            print(f"{score} score, {no_steps} no. steps, {fuel} fuel used")
 
-    agent.save_all('Baseline0.99')
+        if not episode % 100:
+            print(ep_time, "seconds of episode")
+            print(training_time, "to train")
+            print(f"{score} score, {np.mean(steps[-100:])} mean no. steps")
+
+    agent.save_all('B0.99')
+
+

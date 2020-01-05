@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from ModelFree.PolicyGradients.REINFORCE import PolicyEstimator
 
-inds = [(11, 13), (4, 13), (11, 2), (5, 8)]
+inds = [(11, 8), (4, 13), (11, 2), (5, 8)]
 
 
 def plot_stats(model_name):
@@ -22,11 +22,12 @@ def plot_stats(model_name):
     plt.figure(2)
     plt.plot(scores)
     N = 100
-    plt.plot(np.convolve(scores, np.ones((N,))/N, mode='same'))
+    plt.plot(np.convolve(scores, np.ones((N,))/N, mode='same')[:-50])
     plt.xlabel("Episode")
     plt.ylabel("Scores")
     plt.show()
 
+
 if __name__ == '__main__':
-    plot_stats('LunarLander-v2/Discount0.95')
+    plot_stats('LunarLander-v2/NB0.99')
     plot_stats('LunarLander-v2/Baseline0.99')
