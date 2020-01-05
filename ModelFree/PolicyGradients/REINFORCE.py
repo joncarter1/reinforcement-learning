@@ -124,7 +124,7 @@ class PolicyEstimator:
         mean = np.mean(G)
         std = np.std(G) if np.std(G) > 0 else 1
         self.G_n = (G - mean) / std  # Train on normalized values
-
+        #self.G_n = G
         if self.baseline:
             self.advantages = self.G_n - np.squeeze(self.value_nn.predict(state_memory))
             self.value_nn.train_on_batch(state_memory, self.G_n)
@@ -156,39 +156,42 @@ class PolicyEstimator:
         pickle.dump(self.weights1, open(f"{subdir_name}/weights1.p", "wb"))
         pickle.dump(self.weights2, open(f"{subdir_name}/weights2.p", "wb"))
         pickle.dump(self.scores, open(f"{subdir_name}/scores.p", "wb"))
+        with open(f"{subdir_name}/specs.txt", "a") as text_file:
+            text_file.write(f"lr = {self.lr}\n")
+            text_file.write(f"gamma = {self.gamma}\n")
+            text_file.write(f"baseline = {self.baseline}\n")
         self.save_model(subdir_name)
 
 
-if __name__ == "__main__":
+def main(EPISODES=3000, LOAD_MODEL=None, baseline=True, gamma=0.99, seed=1):
     env = gym.make('LunarLander-v2')
-    #env = LunarLander()
+    # env = LunarLander()
     # acrobot_env = gym.make('Acrobot-v1')
-    np.random.seed(1)
-    LOAD_MODEL = None
-    #LOAD_MODEL = "NB0.99"
+    np.random.seed(seed)
+    # LOAD_MODEL = "NB0.99"
     gamma = 0.99
-    use_b = True
+    use_b = baseline
     if LOAD_MODEL:
         agent = PolicyEstimator(env, LOAD_MODEL, gamma, use_b)
     else:
         agent = PolicyEstimator(env, None, gamma, use_b)
-    steps = []
-    EPISODES = 3000
+
     # Iterate over episodes
 
+    steps = []
     for episode in tqdm(range(1, EPISODES + 1), ascii=True, unit='episodes'):
         show = False
         if not episode % 1000 or LOAD_MODEL:
             show = False
         current_state = env.reset()
-        score, no_steps, fuel = 0, 0, 0
+        score, no_steps = 0, 0
         # Reset flag and start iterating until episode ends
         done = False
         start = timer()
         while not done:
             no_steps += 1  # Max steps
             action = agent.choose_action(current_state)
-            #fuel = fuel+1 if action != 0 else fuel
+            # fuel = fuel+1 if action != 0 else fuel
             # _action = action if fuel < limit else 0  # One line hack for introducing fuel
             next_state, reward, done, _ = env.step(action)
             if show:
@@ -208,6 +211,8 @@ if __name__ == "__main__":
             print(training_time, "to train")
             print(f"{score} score, {np.mean(steps[-100:])} mean no. steps")
 
-    agent.save_all('B0.99')
+    agent.save_all('BM0.99')
 
 
+if __name__ == "__main__":
+    main(3000, None, True, 0.99)

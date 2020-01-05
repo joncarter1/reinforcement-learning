@@ -20,14 +20,18 @@ def plot_stats(model_name):
     plt.ylabel("Weights")
     plt.legend(title="Weight Matrix index")
     plt.figure(2)
-    plt.plot(scores)
+    #plt.plot(scores)
     N = 100
-    plt.plot(np.convolve(scores, np.ones((N,))/N, mode='same')[:-50])
+    label = model_name.split("/")[-1]
+    plt.plot(np.convolve(scores, np.ones((N,))/N, mode='same')[:-50], label=label)
     plt.xlabel("Episode")
     plt.ylabel("Scores")
-    plt.show()
 
 
 if __name__ == '__main__':
-    plot_stats('LunarLander-v2/NB0.99')
-    plot_stats('LunarLander-v2/Baseline0.99')
+    #plot_stats('LunarLander-v2/NB0.99')
+    #plot_stats('LunarLander-v2/B0.99')
+    plot_stats('LunarLander-v2/NBNM0.99')
+    plot_stats('LunarLander-v2/BNM0.99')
+    plt.legend()
+    plt.show()

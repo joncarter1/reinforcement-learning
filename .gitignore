@@ -1,4 +1,4 @@
 *.pyc
 .venv
 
-ModelFree/PolicyGradients/LunarLander-v2/
+ModelFree/PolicyGradients/LunarLander-v2/*
