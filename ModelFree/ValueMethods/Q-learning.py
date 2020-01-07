@@ -12,12 +12,12 @@ import random
 import numpy as np
 import matplotlib.pyplot as plt
 
-env = gym.make('Acrobot-v1')
+env = gym.make('MountainCar-v0')
 
 step_size = 40
 l = 0.1
 discount = 0.95
-episodes = 20
+episodes = 1000
 show_every = 1000
 window = 100
 
