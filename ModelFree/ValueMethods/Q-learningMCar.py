@@ -8,6 +8,7 @@ Created on Sun Sep  1 20:00:08 2019
 
 
 import gym
+import os
 from gym.wrappers import Monitor
 import pickle
 import numpy as np
@@ -169,6 +170,10 @@ def main(episodes, l, discount, strategy, parameter, seed=0):
     fig.tight_layout()  # otherwise the right y-label is slightly clipped
     plt.show()"""
     q_agent.env.close()
+    if not os.path.isdir("results"):
+        os.makedirs("results")
+    if not os.path.isdir(f"results/{strategy}"):
+        os.makedirs(f"results/{strategy}")
     pickle.dump([ep_rewards, aggr_ep_rewards, q_agent.q_table], open(f"results/{strategy}/{l}-{discount}-{parameter}.p", "wb"))
 
     # np.save('q_table', q_table)
@@ -184,4 +189,4 @@ if __name__ == "__main__":
     for strategy, params in zip(strategies, s_params):
         for param in params:
             for discount in discounts:
-                main(20000, l, discount, strategy, param)
+                main(20, l, discount, strategy, param)
