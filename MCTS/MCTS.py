@@ -113,7 +113,7 @@ if __name__ == "__main__":
     user = random.choice([-1, 1])
     cpu = 1 if user == -1 else -1
     mcts = MCTSagent(cg)
-    initial_iterations, iterations = 1000, 250
+    initial_iterations, iterations = 2000, 2000
     children, best_child = mcts.run(initial_iterations)
     if cpu == -1:  # Computer goes first
         cg.take_action(best_child.action, cpu)

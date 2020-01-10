@@ -1,0 +1,4 @@
+gamma = 0.99
+minibatch = 32
+min. replay size = 1000
+replay size = 50000

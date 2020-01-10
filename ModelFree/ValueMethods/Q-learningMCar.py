@@ -30,6 +30,9 @@ class GreedyPolicy:
         self.parameter = self.e_initial
 
     def choose_action(self, q_values, N_values, iterations):
+        log_parameter = np.log(self.e_initial)+iterations*np.log(self.e_decay)
+        if log_parameter < -500:  # Prevent any weird behaviour due to numerical instability.
+            return np.argmax(q_values)
         self.parameter = self.e_initial*self.e_decay**iterations
         if np.random.random() > self.parameter:
             return np.argmax(q_values)
@@ -43,7 +46,10 @@ class SoftmaxPolicy:
         self.parameter = tau
 
     def choose_action(self, q_values, N_values, iterations):
-        self.parameter = self.tau_initial*self.tau_increase**iterations
+        log_parameter = np.log(self.tau_initial)+iterations*np.log(self.tau_increase)
+        if log_parameter > 40:  # Basically deterministic
+            return np.argmax(q_values)
+        self.parameter = self.tau_initial * self.tau_increase ** iterations - 1
         return np.random.choice(len(q_values), p=softmax(self.parameter*q_values))
 
 def ucb(t, x):
@@ -118,7 +124,7 @@ def main(episodes, l, discount, strategy, parameter, seed=0):
     else:
         raise ValueError
 
-    q_agent = QAgent(policy, l, discount)
+    q_agent = QAgent(policy, l, discount, seed=seed)
 
     for episode in range(0, episodes + 1):
         episode_reward = 0
@@ -181,12 +187,15 @@ def main(episodes, l, discount, strategy, parameter, seed=0):
 if __name__ == "__main__":
     strategies = ['greedy', 'softmax']
     l, discount = 0.2, 0.97
-    strategy = 'greedy'
-    s_params = [[0.99, 0.995, 0.999],[1.001, 1.01, 1.05]]
+    strategy = 'softmax'
+    s_params = [[0.99, 0.995, 0.999], [1.0001, 1.001, 1.01]]
     ls = [0.05, 0.1, 0.2]
     l, discount = 0.2, 0.97
     discounts = [0.95,0.97]
-    for strategy, params in zip(strategies, s_params):
-        for param in params:
-            for discount in discounts:
-                main(20, l, discount, strategy, param)
+    #main(20000, l, discount, strategy, 1.0001, seed=0)
+    #main(20000, l, discount, strategy, 1.001, seed=0)
+    main(20000, l, discount, strategy, 1.0005, seed=0)
+    #for strategy, params in zip(strategies, s_params):
+    #for param in params:
+    #for discount in discounts:
+    #    main(20, l, discount, strategy, param)

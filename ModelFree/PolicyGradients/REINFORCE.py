@@ -1,5 +1,6 @@
 import warnings
 warnings.filterwarnings('ignore')
+import multiprocessing
 import os
 import pickle
 import numpy as np
@@ -34,9 +35,10 @@ class FFLunarLander(LunarLander):
 
 
 class PolicyEstimator:
-    def __init__(self, env, name=None, gamma=0.99, baseline=False):
+    def __init__(self, env, name=None, gamma=0.99, baseline=False, normalise=True):
         # Environment specifics
         self.env = env
+        self.normalise = normalise
         self.env_name = env.unwrapped.spec.id
         self.gamma = gamma
         self.baseline = baseline
@@ -63,6 +65,7 @@ class PolicyEstimator:
 
         if name:
             subdir_name = "/".join([self.env_name, name])
+            self.scores = pickle.load(open(f"{subdir_name}/scores.p","rb"))
             self.policy_nn.load_weights(f"{subdir_name}/PolicyNN-weights.h5")
             self.predict_nn.load_weights(f"{subdir_name}/PredictNN-weights.h5")
             if baseline:
@@ -121,10 +124,14 @@ class PolicyEstimator:
         actions[np.arange(len(action_memory)), action_memory] = 1
         discount_filter = np.flip(self.gamma**np.arange(0, reward_memory.shape[0]))
         G = np.convolve(reward_memory, discount_filter)[-reward_memory.shape[0]:]
-        mean = np.mean(G)
-        std = np.std(G) if np.std(G) > 0 else 1
-        self.G_n = (G - mean) / std  # Train on normalized values
-        #self.G_n = G
+
+        if self.normalise:
+            mean = np.mean(G)
+            std = np.std(G) if np.std(G) > 0 else 1
+            self.G_n = (G - mean) / std  # Train on normalized values
+        else:
+            self.G_n = G
+
         if self.baseline:
             self.advantages = self.G_n - np.squeeze(self.value_nn.predict(state_memory))
             self.value_nn.train_on_batch(state_memory, self.G_n)
@@ -137,8 +144,8 @@ class PolicyEstimator:
 
     def update_stats(self, score):
         self.scores.append(score)
-        self.weights1.append(self.policy_nn.get_weights()[2])
-        self.weights2.append(self.policy_nn.get_weights()[4])
+        #self.weights1.append(self.policy_nn.get_weights()[2])
+        #self.weights2.append(self.policy_nn.get_weights()[4])
 
     def save_model(self, name):
         self.policy_nn.save_weights(f"{name}/PolicyNN-weights.h5")
@@ -153,36 +160,35 @@ class PolicyEstimator:
         subdir_name = "/".join([self.env_name, name])
         if not os.path.isdir(subdir_name):
             os.makedirs(subdir_name)
-        pickle.dump(self.weights1, open(f"{subdir_name}/weights1.p", "wb"))
-        pickle.dump(self.weights2, open(f"{subdir_name}/weights2.p", "wb"))
+        #pickle.dump(self.weights1, open(f"{subdir_name}/weights1.p", "wb"))
+        #pickle.dump(self.weights2, open(f"{subdir_name}/weights2.p", "wb"))
         pickle.dump(self.scores, open(f"{subdir_name}/scores.p", "wb"))
         with open(f"{subdir_name}/specs.txt", "a") as text_file:
             text_file.write(f"lr = {self.lr}\n")
             text_file.write(f"gamma = {self.gamma}\n")
             text_file.write(f"baseline = {self.baseline}\n")
+            text_file.write(f"normalise = {self.normalise}\n")
         self.save_model(subdir_name)
 
 
-def main(EPISODES=3000, LOAD_MODEL=None, baseline=True, gamma=0.99, seed=1):
+def main(EPISODES=3000, LOAD_MODEL=None, save_name=None, baseline=True, normalise=False, gamma=0.99, seed=1):
     env = gym.make('LunarLander-v2')
     # env = LunarLander()
     # acrobot_env = gym.make('Acrobot-v1')
     np.random.seed(seed)
+    env.seed(seed)
     # LOAD_MODEL = "NB0.99"
     gamma = 0.99
     use_b = baseline
-    if LOAD_MODEL:
-        agent = PolicyEstimator(env, LOAD_MODEL, gamma, use_b)
-    else:
-        agent = PolicyEstimator(env, None, gamma, use_b)
+    agent = PolicyEstimator(env, LOAD_MODEL, gamma, use_b, normalise)
 
     # Iterate over episodes
 
     steps = []
     for episode in tqdm(range(1, EPISODES + 1), ascii=True, unit='episodes'):
         show = False
-        if not episode % 1000 or LOAD_MODEL:
-            show = False
+        if not episode % (EPISODES//10) and LOAD_MODEL:
+            show = True
         current_state = env.reset()
         score, no_steps = 0, 0
         # Reset flag and start iterating until episode ends
@@ -206,13 +212,14 @@ def main(EPISODES=3000, LOAD_MODEL=None, baseline=True, gamma=0.99, seed=1):
         agent.learn()
         training_time = timer() - start
 
-        if not episode % 100:
+        if not episode % 200:
             print(ep_time, "seconds of episode")
             print(training_time, "to train")
             print(f"{score} score, {np.mean(steps[-100:])} mean no. steps")
-
-    agent.save_all('BM0.99')
+    if save_name:
+        agent.save_all(save_name)
 
 
 if __name__ == "__main__":
-    main(3000, None, True, 0.99)
+    baseline, normalise, gamma = True, False, 0.95
+    main(50, "BNM0.99", None, baseline=baseline, normalise=normalise, gamma=gamma)
