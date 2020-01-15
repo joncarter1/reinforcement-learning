@@ -222,4 +222,4 @@ def main(EPISODES=3000, LOAD_MODEL=None, save_name=None, baseline=True, normalis
 
 if __name__ == "__main__":
     baseline, normalise, gamma = True, False, 0.95
-    main(50, "BNM0.99", None, baseline=baseline, normalise=normalise, gamma=gamma)
+    main(50, "BNM0.9", None, baseline=baseline, normalise=normalise, gamma=gamma)

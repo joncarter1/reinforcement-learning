@@ -45,5 +45,5 @@ if __name__ == '__main__':
 
 
     plt.legend()
-    #plt.savefig("baselines")
+    plt.savefig("dqn")
     plt.show()
