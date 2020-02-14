@@ -6,11 +6,7 @@ import tensorflow as tf
 from keras.layers import Dropout, Activation, Dense, Input
 from keras.models import Model
 from keras.optimizers import Adam
-import safety_gym
-import gym
 import numpy as np
-from safety_gym.envs.engine import Engine
-from SafeRL.Controller import human_policy
 import pickle
 
 def create_model(input_size, output_size):
