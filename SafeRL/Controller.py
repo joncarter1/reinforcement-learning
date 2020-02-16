@@ -1,6 +1,7 @@
 import safety_gym
 import gym
 from gym.utils.play import play
+import pandas as pd
 import time
 import threading
 import numpy as np
@@ -9,16 +10,23 @@ from safety_gym.envs.engine import Engine
 from tqdm import tqdm
 from keras.models import load_model
 
-state_action_buffer = []
-delta_state_buffer = []
+try:
+    state_action_buffer = list(pickle.load(open(f"policy_data/state_action_buffer", "rb")))
+    delta_state_buffer = list(pickle.load(open(f"policy_data/delta_state_buffer", "rb")))
+    print(len(state_action_buffer))
+except FileNotFoundError:
+    state_action_buffer = []
+    delta_state_buffer = []
 
 model = load_model("model1")
 
 
+def sigmoid(x):
+    return 2 / (1 + np.exp(-x)) - 1
+
+
 def nn_policy(state):
     stacked_state = np.expand_dims(np.hstack(list(state.values())), axis=1).T
-
-    print(stacked_state.shape)
     return model.predict(x=stacked_state)
 
 
@@ -30,7 +38,7 @@ def human_policy(new_state):
     #print("Distance", goal_dist)
     #print("Compass", goal_compass)
     cos_theta, sin_theta = goal_compass
-    forward = cos_theta if goal_dist > 2 else 0.01
+    forward = sigmoid(0.05*cos_theta*goal_dist)
     rotation = sin_theta
     return np.array([forward, rotation])
 
@@ -44,28 +52,25 @@ def store_transition(state, action, new_state):
     state_action_buffer.append(state_action_vector)
     delta_state_buffer.append(delta_state_vector)
 
+
 def main(EPISODES, render=False, policy=human_policy):
-    #state_action_buffer = []
-    #dstate_buffer = []
-    for i in tqdm(range(EPISODES)):
+    for _ in tqdm(range(EPISODES)):
         state = env.reset()
         if render:
             env.render()
 
         done = False
         while not done:
-            #action = np.clip(np.random.randn(2), -1, 1)
             action = policy(state)
             new_state, reward, done, info = env.step(action)
-            #store_transition(state, action, new_state)
+            store_transition(state, action, new_state)
             state = new_state
 
             if render:
                 env.render()
 
-    #print(np.array(state_action_buffer).shape, np.array(delta_state_buffer).shape)
-    #pickle.dump(np.array(state_action_buffer), open(f"policy_data/state_action_buffer", "wb"))
-    #pickle.dump(np.array(delta_state_buffer), open(f"policy_data/delta_state_buffer", "wb"))
+    pickle.dump(np.array(state_action_buffer), open(f"policy_data/state_action_buffer", "wb"))
+    pickle.dump(np.array(delta_state_buffer), open(f"policy_data/delta_state_buffer", "wb"))
 
 
 if __name__ == "__main__":
@@ -92,4 +97,4 @@ if __name__ == "__main__":
     }
     env = Engine(config)
     #env = gym.make('Safexp-PointGoal2-v0')
-    main(EPISODES=100, render=True, policy=nn_policy)
+    main(EPISODES=100, render=False, policy=human_policy)
