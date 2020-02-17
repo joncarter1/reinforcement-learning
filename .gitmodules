@@ -1,0 +1,6 @@
+[submodule "safety-gym"]
+	path = safety-gym
+	url = git@github.com:joncarter1/safety-gym.git
+[submodule "safety-starter-agents"]
+	path = safety-starter-agents
+	url = git@github.com:joncarter1/safety-starter-agents.git

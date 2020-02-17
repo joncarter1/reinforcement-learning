@@ -10,7 +10,6 @@ from safety_gym.envs.engine import Engine
 def key_check(l_key, r_key, u_key, d_key):
     presses = pygame.event.get(pump=True)
     if presses != []:
-        print(presses)
         for event in presses:
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_COMMA:
@@ -38,7 +37,6 @@ def key_check(l_key, r_key, u_key, d_key):
 def key_check2():
     l_key, r_key, u_key, d_key = 0, 0, 0, 0
     pressed_keys = np.where(np.array(pygame.key.get_pressed()) == 1)[0]
-    print(pressed_keys)
     if pygame.K_COMMA in pressed_keys:
         l_key = 1
     if pygame.K_SLASH in pressed_keys:
@@ -69,9 +67,10 @@ def main():
             v_forward = 0.5 * (u_key - d_key)
             # print(v_forward)
             action = (v_forward, rotation)
+
             new_state, reward, done, lives = env.step(action)
             goal_lidar = new_state["goal_lidar"]
-
+            print(goal_lidar)
             env.render()
             clock.tick(50)
 

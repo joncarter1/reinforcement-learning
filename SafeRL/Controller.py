@@ -34,11 +34,32 @@ def human_policy(new_state):
     """Hand crafted controller for problem."""
     goal_dist = 1 / new_state["goal_dist"]
     goal_compass = new_state["goal_compass"]
+    cos_theta, sin_theta = goal_compass
+    target_angle_sin = np.arcsin(sin_theta)
+    target_angle_cos = np.arccos(cos_theta)
+
+    print("sin/cos", sin_theta, cos_theta)
+    forward = sigmoid(0.005 * cos_theta * goal_dist)
+    direction = np.sign(forward)
+
+    if direction == 1:
+        inds = [13, 14, 15, 0, 1, 2, 3]
+    else:
+        inds = [5, 6, 7, 8, 9, 10, 11]
+
+    grem_lidar = new_state["gremlins_lidar"]
+    hazards_lidar = new_state["hazards_lidar"]
+    combined_lidar = grem_lidar+hazards_lidar
+    #print(combined_lidar[inds])
+    target_direction = np.where(combined_lidar == np.min(combined_lidar[inds]))[0]
+    #print("Target directions")
+    #print(target_direction)
+    #print(np.min((target_direction, np.abs(target_direction-16)), axis=0))
+
     #goal_lidar = new_state["goal_lidar"]
     #print("Distance", goal_dist)
     #print("Compass", goal_compass)
-    cos_theta, sin_theta = goal_compass
-    forward = sigmoid(0.05*cos_theta*goal_dist)
+
     rotation = sin_theta
     return np.array([forward, rotation])
 
@@ -53,7 +74,7 @@ def store_transition(state, action, new_state):
     delta_state_buffer.append(delta_state_vector)
 
 
-def main(EPISODES, render=False, policy=human_policy):
+def main(EPISODES, render=False, save=False, policy=human_policy):
     for _ in tqdm(range(EPISODES)):
         state = env.reset()
         if render:
@@ -63,14 +84,21 @@ def main(EPISODES, render=False, policy=human_policy):
         while not done:
             action = policy(state)
             new_state, reward, done, info = env.step(action)
-            store_transition(state, action, new_state)
+            print(state)
+            if done:
+                print(state)
+                print(new_state)
+            if save:
+                store_transition(state, action, new_state)
             state = new_state
 
             if render:
                 env.render()
 
-    pickle.dump(np.array(state_action_buffer), open(f"policy_data/state_action_buffer", "wb"))
-    pickle.dump(np.array(delta_state_buffer), open(f"policy_data/delta_state_buffer", "wb"))
+    if save:
+        pickle.dump(np.array(state_action_buffer), open(f"policy_data/state_action_buffer", "wb"))
+        pickle.dump(np.array(delta_state_buffer), open(f"policy_data/delta_state_buffer", "wb"))
+    return
 
 
 if __name__ == "__main__":
@@ -96,5 +124,4 @@ if __name__ == "__main__":
         'gremlins_keepout': 0.4,
     }
     env = Engine(config)
-    #env = gym.make('Safexp-PointGoal2-v0')
-    main(EPISODES=100, render=False, policy=human_policy)
+    main(EPISODES=100, render=True, policy=human_policy, save=False)
