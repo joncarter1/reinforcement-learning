@@ -31,6 +31,7 @@ def main(EPOCHS):
     state_action_buffer = pickle.load(open(f"policy_data/state_action_buffer", "rb"))
     delta_state_buffer = pickle.load(open(f"policy_data/delta_state_buffer", "rb"))
     print(state_action_buffer.shape)
+
     states = state_action_buffer[:, :47]
     actions = state_action_buffer[:, 47:]
     input_size = states.shape[1]
@@ -48,13 +49,15 @@ def main2():
     states = state_action_buffer[:, :47]
     actions = state_action_buffer[:, 47:]
     print("Test")
-    print(model.evaluate(x=states[80000:], y=actions[80000:], verbose=False))
+    print(model.evaluate(x=states[180000:], y=actions[180000:], verbose=False))
     print("Training")
-    print(model.evaluate(x=states[:80000], y=actions[:80000], verbose=False))
+    print(model.evaluate(x=states[:180000], y=actions[:180000], verbose=False))
     return
 
 
 if __name__ == "__main__":
-    main(5)
-    #main2()
+    #main(5)
+
+
+    main2()
 

@@ -199,4 +199,4 @@ if __name__ == "__main__":
         'gremlins_keepout': 0.4,
     }
     env = Engine(config)
-    main(EPISODES=1000, render=False, policy=human_policy, save=True)
+    main(EPISODES=100, render=False, policy=human_policy, save=True)
