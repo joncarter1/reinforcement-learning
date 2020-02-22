@@ -1,4 +1,5 @@
 *.pyc
 .venv
 baselines
+SafeRL/policy_data
 ModelFree/PolicyGradients/LunarLander-v2/*

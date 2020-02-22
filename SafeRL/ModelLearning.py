@@ -50,11 +50,11 @@ class NNPolicy:
 
     def predict(self, state):
         normalised_state = (state-self.state_mean)/self.state_std
-        normalised_prediction = self.nn.predict(x=state)
+        normalised_prediction = self.nn.predict(x=normalised_state)
         return (normalised_prediction*self.action_std) + self.action_mean
 
     def save(self):
-        pickle.dump(self, open("model1", "wb"))
+        pickle.dump(self, open("model2", "wb"))
 
 
 def main(EPOCHS):
@@ -86,7 +86,7 @@ def main2():
 
 
 if __name__ == "__main__":
-    main(1)
+    main(4)
 
 
     #main2()

@@ -11,6 +11,7 @@ from tqdm import tqdm
 from keras.models import load_model
 import os
 from copy import deepcopy
+from SafeRL.ModelLearning import NNPolicy
 
 """
 -ve rotation = clockwise torque
@@ -34,19 +35,27 @@ except FileNotFoundError:
     delta_state_buffer = []
     ep_stats = {"rewards":[], "costs":[]}
 
-model = load_model("model1")
-
+#model = load_model("model1")
+try:
+    nn_model = pickle.load(open("model2", "rb"))
+except Exception as e:
+    raise e
+    nn_model = None
 
 def sigmoid(x):
     return 2 / (1 + np.exp(-x)) - 1
+
 
 def sat_exp(x, k):
     """Saturating exponential function."""
     return np.exp(-k*x)
 
+
 def nn_policy(state):
-    stacked_state = np.expand_dims(np.hstack(list(state.values())), axis=1).T
-    return model.predict(x=stacked_state)
+    modified_state = modify_state(state)
+    print(np.hstack(list(modified_state.values())).shape)
+    stacked_state = np.expand_dims(np.hstack(list(modified_state.values())), axis=1).T
+    return nn_model.predict(stacked_state)
 
 
 def angle_invert(sin_angle, cos_angle):
@@ -139,14 +148,17 @@ def human_policy(new_state):
     return np.array([forward, rotation])
 
 
+def modify_state(state_dict):
+    modified_state_dict = deepcopy(state_dict)
+    del modified_state_dict["magnetometer"]  # Useless state measurement.
+    del modified_state_dict["gyro"]  # Useless state measurement.
+    for key in ["accelerometer", "velocimeter"]:
+        modified_state_dict[key] = modified_state_dict[key][:2]  # Remove z axis value
+    return modified_state_dict
+
 def store_transition(state, action, new_state):
-    state_copy = deepcopy(state)
-    new_state_copy = deepcopy(new_state)
-    for state_dict in [state_copy, new_state_copy]:
-        del state_dict["magnetometer"]  # Useless state measurement.
-        del state_dict["gyro"]  # Useless state measurement.
-        for key in ["accelerometer", "velocimeter"]:
-            state_dict[key] = state_dict[key][:2]  # Remove z axis value
+    state_copy = modify_state(state)
+    new_state_copy = modify_state(new_state)
 
     stacked_state = np.hstack(list(state_copy.values()))
     new_stacked_state = np.hstack(list(new_state_copy.values()))
@@ -217,4 +229,4 @@ if __name__ == "__main__":
         'gremlins_keepout': 0.4,
     }
     env = Engine(config)
-    main(EPISODES=500, render=False, policy=human_policy, save=True)
+    main(EPISODES=50, render=True, policy=nn_policy, save=False)
