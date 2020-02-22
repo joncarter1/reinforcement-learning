@@ -53,7 +53,6 @@ def sat_exp(x, k):
 
 def nn_policy(state):
     modified_state = modify_state(state)
-    print(np.hstack(list(modified_state.values())).shape)
     stacked_state = np.expand_dims(np.hstack(list(modified_state.values())), axis=1).T
     return nn_model.predict(stacked_state)
 
@@ -76,7 +75,7 @@ def path_finder(hazard_lidar, goal_ind):
     best_safety = None  # Safest path direction found
     forward_range = np.arange(-4, 5)
     safe_directions = np.where(hazard_lidar < safety_threshold2)[0]
-    sort_key = lambda x : min(abs(x-goal_ind), lidar_bins - abs(x-goal_ind))  # Sort safe directions by distance from goal ind.
+    sort_key = lambda x: min(abs(x-goal_ind), lidar_bins - abs(x-goal_ind))  # Sort safe directions by distance from goal ind.
     sorted_safe_directions = sorted(safe_directions, key=sort_key)
 
     for direction in sorted_safe_directions:
@@ -110,10 +109,10 @@ def save_results(state_buffer, state_change_buffer, stats):
     return True
 
 
-def get_forward(path_ind, hazards_lidar):
+def get_forward(cos_theta, path_ind, hazards_lidar):
     lidar_range = np.arange(-lidar_bins//4, lidar_bins//4 + 1)
     forward_hazards = hazards_lidar[(lidar_range+path_ind)%lidar_bins]
-    forward = 1/(10+20*np.sum(hazards_lidar[(lidar_range+path_ind)%lidar_bins]))
+    forward = cos_theta/(10+20*np.sum(hazards_lidar[(lidar_range+path_ind)%lidar_bins]))
     return forward
 
 
@@ -140,7 +139,7 @@ def human_policy(new_state):
     if target_angle > 180:
         target_angle = target_angle - 360
     #print(grem_lidar[lidar_range + lidar_ind])
-    forward = get_forward(path_ind, hazards_lidar)
+    forward = get_forward(cos_theta, path_ind, hazards_lidar)
     k = 0.1
     rotation = sigmoid(k*target_angle)
     #print("Forward", forward)
@@ -186,7 +185,8 @@ def main(EPISODES, render=False, save=False, policy=human_policy):
             new_state, reward, done, info = env.step(action)
             episode_reward += reward
             episode_cost += info["cost"]
-            if save:
+            risky_state = np.max(new_state["hazards_lidar"]) > 0.8
+            if save and (risky_state or np.random.random() < 0.1):
                 store_transition(state, action, new_state)
             state = new_state
 
@@ -198,7 +198,7 @@ def main(EPISODES, render=False, save=False, policy=human_policy):
         ep_costs.append(episode_cost)
 
     if save:
-        ep_stats["rewards"]+= ep_rewards
+        ep_stats["rewards"] += ep_rewards
         ep_stats["costs"] += ep_costs
         pickle.dump(np.array(state_action_buffer), open(f"policy_data/state_action_buffer", "wb"))
         pickle.dump(np.array(delta_state_buffer), open(f"policy_data/delta_state_buffer", "wb"))
@@ -229,4 +229,4 @@ if __name__ == "__main__":
         'gremlins_keepout': 0.4,
     }
     env = Engine(config)
-    main(EPISODES=50, render=True, policy=nn_policy, save=False)
+    main(EPISODES=50, render=True, policy=human_policy, save=True)
