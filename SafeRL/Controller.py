@@ -35,7 +35,7 @@ def sigmoid(x):
 
 def sat_exp(x, k):
     """Saturating exponential function."""
-    return 1-np.exp(-k*x)
+    return np.exp(-k*x)
 
 def nn_policy(state):
     stacked_state = np.expand_dims(np.hstack(list(state.values())), axis=1).T
@@ -94,11 +94,10 @@ def save_results(state_buffer, state_change_buffer, stats):
     return True
 
 
-def get_forward(hazards_lidar):
+def get_forward(path_ind, hazards_lidar):
     lidar_range = np.arange(-lidar_bins//4, lidar_bins//4 + 1)
-    hazard_factor = 1/np.max(hazards_lidar[lidar_range])
-    k1 = 0.01
-    forward = sat_exp(hazard_factor, k1)
+    forward_hazards = hazards_lidar[(lidar_range+path_ind)%lidar_bins]
+    forward = 1/(5+10*np.sum(hazards_lidar[(lidar_range+path_ind)%lidar_bins]))
     return forward
 
 
@@ -115,7 +114,7 @@ def human_policy(new_state):
     #grem_lidar = 1/new_state["gremlins_lidar"]
     hazards_lidar = new_state["hazards_lidar"]
     #print("Hazards:", hazards_lidar)
-    forward_hazards = hazards_lidar[(lidar_range+goal_ind)%lidar_bins]
+
     #print("Goal direction hazards", forward_hazards)
     #forward_gremlins = grem_lidar[(lidar_range+goal_ind)%16]
 
@@ -125,7 +124,7 @@ def human_policy(new_state):
     if target_angle > 180:
         target_angle = target_angle - 360
     #print(grem_lidar[lidar_range + lidar_ind])
-    forward = get_forward(hazards_lidar)
+    forward = get_forward(path_ind, hazards_lidar)
     k = 0.1
     rotation = sigmoid(k*target_angle)
     #print("Forward", forward)
@@ -158,6 +157,7 @@ def main(EPISODES, render=False, save=False, policy=human_policy):
         while not done:
             action = policy(state)
             new_state, reward, done, info = env.step(action)
+
             episode_reward += reward
             episode_cost += info["cost"]
             """print("Goal", 1/state["goal_lidar"])
@@ -206,4 +206,4 @@ if __name__ == "__main__":
         'gremlins_keepout': 0.4,
     }
     env = Engine(config)
-    main(EPISODES=100, render=True, policy=nn_policy, save=False)
+    main(EPISODES=500, render=False, policy=human_policy, save=True)
