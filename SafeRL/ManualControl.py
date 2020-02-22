@@ -69,6 +69,7 @@ def main():
             action = (v_forward, rotation)
 
             new_state, reward, done, lives = env.step(action)
+            print(new_state)
             goal_lidar = new_state["goal_lidar"]
             print(goal_lidar)
             env.render()
