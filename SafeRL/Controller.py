@@ -9,6 +9,8 @@ import pickle
 from safety_gym.envs.engine import Engine
 from tqdm import tqdm
 from keras.models import load_model
+import os
+from copy import deepcopy
 
 """
 -ve rotation = clockwise torque
@@ -19,6 +21,10 @@ lidar_bins = 32
 safety_threshold1 = 0.75
 safety_threshold2 = 0.7
 
+
+if not os.path.exists("policy_data"):
+    os.makedirs("policy_data")
+
 try:
     state_action_buffer = list(pickle.load(open(f"policy_data/state_action_buffer", "rb")))
     delta_state_buffer = list(pickle.load(open(f"policy_data/delta_state_buffer", "rb")))
@@ -26,6 +32,7 @@ try:
 except FileNotFoundError:
     state_action_buffer = []
     delta_state_buffer = []
+    ep_stats = {"rewards":[], "costs":[]}
 
 model = load_model("model1")
 
@@ -97,7 +104,7 @@ def save_results(state_buffer, state_change_buffer, stats):
 def get_forward(path_ind, hazards_lidar):
     lidar_range = np.arange(-lidar_bins//4, lidar_bins//4 + 1)
     forward_hazards = hazards_lidar[(lidar_range+path_ind)%lidar_bins]
-    forward = 1/(5+10*np.sum(hazards_lidar[(lidar_range+path_ind)%lidar_bins]))
+    forward = 1/(10+20*np.sum(hazards_lidar[(lidar_range+path_ind)%lidar_bins]))
     return forward
 
 
@@ -133,13 +140,21 @@ def human_policy(new_state):
 
 
 def store_transition(state, action, new_state):
-    stacked_state = np.hstack(list(state.values()))
-    new_stacked_state = np.hstack(list(new_state.values()))
-    state_action_vector = np.hstack((stacked_state, action))
+    state_copy = deepcopy(state)
+    new_state_copy = deepcopy(new_state)
+    for state_dict in [state_copy, new_state_copy]:
+        del state_dict["magnetometer"]  # Useless state measurement.
+        del state_dict["gyro"]  # Useless state measurement.
+        for key in ["accelerometer", "velocimeter"]:
+            state_dict[key] = state_dict[key][:2]  # Remove z axis value
 
+    stacked_state = np.hstack(list(state_copy.values()))
+    new_stacked_state = np.hstack(list(new_state_copy.values()))
+    state_action_vector = np.hstack((stacked_state, action))
     delta_state_vector = new_stacked_state - stacked_state
     state_action_buffer.append(state_action_vector)
     delta_state_buffer.append(delta_state_vector)
+    return
 
 
 def main(EPISODES, render=False, save=False, policy=human_policy):
@@ -157,12 +172,8 @@ def main(EPISODES, render=False, save=False, policy=human_policy):
         while not done:
             action = policy(state)
             new_state, reward, done, info = env.step(action)
-
             episode_reward += reward
             episode_cost += info["cost"]
-            """print("Goal", 1/state["goal_lidar"])
-            print("Hazards", 1/state["hazards_lidar"])
-            print("Gremlins", 1/state["gremlins_lidar"])"""
             if save:
                 store_transition(state, action, new_state)
             state = new_state
