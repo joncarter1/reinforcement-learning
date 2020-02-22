@@ -31,7 +31,6 @@ def main(EPOCHS):
     state_action_buffer = pickle.load(open(f"policy_data/state_action_buffer", "rb"))
     delta_state_buffer = pickle.load(open(f"policy_data/delta_state_buffer", "rb"))
     print(state_action_buffer.shape)
-
     states = state_action_buffer[:, :47]
     actions = state_action_buffer[:, 47:]
     input_size = states.shape[1]

@@ -22,7 +22,7 @@ safety_threshold2 = 0.7
 try:
     state_action_buffer = list(pickle.load(open(f"policy_data/state_action_buffer", "rb")))
     delta_state_buffer = list(pickle.load(open(f"policy_data/delta_state_buffer", "rb")))
-    print(len(state_action_buffer))
+    ep_stats = pickle.load(open(f"policy_data/episode_stats", "rb"))
 except FileNotFoundError:
     state_action_buffer = []
     delta_state_buffer = []
@@ -86,6 +86,12 @@ def path_finder(hazard_lidar, goal_ind):
 
     return best_direction, best_safety
 
+
+def save_results(state_buffer, state_change_buffer, stats):
+    pickle.dump(state_buffer, open(f"policy_data/state_action_buffer", "wb"))
+    pickle.dump(state_change_buffer, open(f"policy_data/delta_state_buffer", "wb"))
+    pickle.dump(stats, open(f"policy_data/episode_stats", "wb"))
+    return True
 
 
 def get_forward(hazards_lidar):
@@ -169,7 +175,8 @@ def main(EPISODES, render=False, save=False, policy=human_policy):
         ep_costs.append(episode_cost)
 
     if save:
-        ep_stats = {"rewards":ep_rewards, "costs":ep_costs}
+        ep_stats["rewards"]+= ep_rewards
+        ep_stats["costs"] += ep_costs
         pickle.dump(np.array(state_action_buffer), open(f"policy_data/state_action_buffer", "wb"))
         pickle.dump(np.array(delta_state_buffer), open(f"policy_data/delta_state_buffer", "wb"))
         pickle.dump(ep_stats, open(f"policy_data/episode_stats", "wb"))
@@ -199,4 +206,4 @@ if __name__ == "__main__":
         'gremlins_keepout': 0.4,
     }
     env = Engine(config)
-    main(EPISODES=100, render=False, policy=human_policy, save=True)
+    main(EPISODES=100, render=True, policy=nn_policy, save=False)
