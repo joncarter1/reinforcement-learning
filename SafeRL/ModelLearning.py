@@ -40,12 +40,13 @@ class NNPolicy:
         return (states-self.state_mean)/self.state_std, (actions-self.action_mean)/self.action_std
 
     def train(self, states, actions, EPOCHS):
-        self.state_mean, self.state_std = np.mean(states, axis = 0), np.std(states, axis = 0)
-        self.action_mean, self.action_std = np.mean(actions, axis = 0), np.std(actions, axis = 0)
-        self.state_std[self.state_std == 0] = 1
-        self.action_std[self.action_std == 0] = 1
+        if None in [self.state_mean, self.state_std, self.action_mean, self.action_std]:
+            self.state_mean, self.state_std = np.mean(states, axis=0), np.std(states, axis=0)
+            self.action_mean, self.action_std = np.mean(actions, axis=0), np.std(actions, axis=0)
+            self.state_std[self.state_std == 0] = 1
+            self.action_std[self.action_std == 0] = 1
         x, y = self.normalise(states, actions)
-        self.nn.fit(x=x, y=y, shuffle=True, epochs=EPOCHS)
+        self.nn.fit(x=x, y=y, shuffle=True, validation_split=0.1, epochs=EPOCHS)
         return
 
     def predict(self, state):
@@ -71,18 +72,6 @@ def main(EPOCHS):
     nn_policy.save()
     return
 
-
-def main2():
-    state_action_buffer = pickle.load(open(f"policy_data/state_action_buffer", "rb"))
-    delta_state_buffer = pickle.load(open(f"policy_data/delta_state_buffer", "rb"))
-    model = load_model("model1")
-    states = state_action_buffer[:, :39]
-    actions = state_action_buffer[:, 39:]
-    #print("Test")
-    print(model.evaluate(x=states[180000:], y=actions[180000:], verbose=False))
-    print("Training")
-    print(model.evaluate(x=states[:180000], y=actions[:180000], verbose=False))
-    return
 
 
 if __name__ == "__main__":
