@@ -11,7 +11,7 @@ from tqdm import tqdm
 from keras.models import load_model
 import os
 from copy import deepcopy
-from SafeRL.ModelLearning import NNPolicy
+
 
 """
 -ve rotation = clockwise torque
@@ -35,8 +35,8 @@ except FileNotFoundError:
     delta_state_buffer = []
     ep_stats = {"rewards":[], "costs":[]}
 
-#model = load_model("model1")
 try:
+    from SafeRL.ModelLearning import NNPolicy
     nn_model = pickle.load(open("model2", "rb"))
 except Exception as e:
     raise e
