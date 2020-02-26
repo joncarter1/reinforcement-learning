@@ -20,7 +20,7 @@ i.e. theta defined in the polar sense.
 
 lidar_bins = 32
 safety_threshold1 = 0.75
-safety_threshold2 = 0.7
+safety_threshold2 = 0.75
 
 
 if not os.path.exists("policy_data"):
@@ -70,12 +70,10 @@ def lidar_mapping(angle):
 
 
 def path_finder(hazard_lidar, goal_ind):
-    safe_path_found = False  # Found path where 3 adjacent lidar readings not proximal.
-    delta = 0
     best_safety = None  # Safest path direction found
     forward_range = np.arange(-4, 5)
     safe_directions = np.where(hazard_lidar < safety_threshold2)[0]
-    sort_key = lambda x: min(abs(x-goal_ind), lidar_bins - abs(x-goal_ind))  # Sort safe directions by distance from goal ind.
+    sort_key = lambda x: min(abs(x-goal_ind), lidar_bins - abs(x-goal_ind))  # Sort safe directions by angle to goal.
     sorted_safe_directions = sorted(safe_directions, key=sort_key)
 
     for direction in sorted_safe_directions:
@@ -87,9 +85,9 @@ def path_finder(hazard_lidar, goal_ind):
         direction_safe = True
 
         """Expand radar around direction summing number of safe adjacent directions."""
-        while direction_safe and i < 5:
+        while direction_safe and i < 7:
             for j in [i, -i]:
-                if (direction+i)%lidar_bins in sorted_safe_directions or direction+i in sorted_safe_directions:
+                if (direction+j)%lidar_bins in sorted_safe_directions or direction+j in sorted_safe_directions:
                     safety2 += 1
                 else:
                     direction_safe = False
@@ -155,6 +153,7 @@ def modify_state(state_dict):
         modified_state_dict[key] = modified_state_dict[key][:2]  # Remove z axis value
     return modified_state_dict
 
+
 def store_transition(state, action, new_state):
     state_copy = modify_state(state)
     new_state_copy = modify_state(new_state)
@@ -173,6 +172,8 @@ def main(EPISODES, render=False, save=False, policy=human_policy):
     ep_costs = []
 
     for i in tqdm(range(EPISODES)):
+        stored = 0
+        total = 0
         episode_reward = 0
         episode_cost = 0
         state = env.reset()
@@ -188,12 +189,14 @@ def main(EPISODES, render=False, save=False, policy=human_policy):
             risky_state = np.max(new_state["hazards_lidar"]) > 0.8
             if save and (risky_state or np.random.random() < 0.1):
                 store_transition(state, action, new_state)
+                stored += 1
+            total += 1
             state = new_state
 
             if render:
                 env.render()
 
-        print(f"Episode {i}, reward {episode_reward}, cost {episode_cost}")
+        print(f"Episode {i}, reward {episode_reward}, cost {episode_cost}, stored {stored}/{total}")
         ep_rewards.append(episode_reward)
         ep_costs.append(episode_cost)
 
@@ -222,11 +225,11 @@ if __name__ == "__main__":
         'constrain_gremlins': False,
         'lidar_max_dist': 3,
         'lidar_num_bins': lidar_bins,
-        'hazards_num': 6,
+        'hazards_num': 10,
         'vases_num': 0,
         'gremlins_num': 0,
         'gremlins_travel': 0.5,
         'gremlins_keepout': 0.4,
     }
     env = Engine(config)
-    main(EPISODES=500, render=False, policy=human_policy, save=True)
+    main(EPISODES=500, render=True, policy=human_policy, save=True)
