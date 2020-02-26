@@ -39,7 +39,6 @@ try:
     from SafeRL.ModelLearning import NNPolicy
     nn_model = pickle.load(open("model2", "rb"))
 except Exception as e:
-    raise e
     nn_model = None
 
 def sigmoid(x):
