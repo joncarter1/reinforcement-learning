@@ -10,11 +10,12 @@ from keras.optimizers import Adam
 import numpy as np
 import pickle
 
-def create_model(input_size, output_size):
+
+def create_model(input_size, output_size, output_activation="tanh"):
     #lr = 0.01
     dr = 0.0
     l2_penalty = 0.0
-    l1_dims, l2_dims, l3_dims, l4_dims = 300, 300, 300, 300
+    l1_dims, l2_dims, l3_dims, l4_dims = 500, 500, 500, 500
     input_layer = Input(shape=(input_size,))
     dense1 = Dense(l1_dims, kernel_regularizer=l2(l2_penalty), bias_regularizer=l2(l2_penalty), activation="relu")(input_layer)
     dropout1 = Dropout(dr)(dense1, training=True)
@@ -24,35 +25,22 @@ def create_model(input_size, output_size):
     dropout3 = Dropout(dr)(dense3, training=True)
     dense4 = Dense(l3_dims, kernel_regularizer=l2(l2_penalty), bias_regularizer=l2(l2_penalty), activation="relu")(dropout3)
     dropout4 = Dropout(dr)(dense4, training=True)
-    output_layer = Dense(output_size, activation="tanh")(dropout4)
+    output_layer = Dense(output_size, activation=output_activation)(dropout4)
     model_nn = Model(input=[input_layer], output=[output_layer])
     model_nn.compile(optimizer="adam", loss="mse", metrics=['accuracy'])
     return model_nn
 
 
-class NNPolicy:
-    def __init__(self, input_size, output_size):
-        self.nn = create_model(input_size, output_size)
-        self.state_mean, self.state_std = None, None
-        self.action_mean, self.action_std = None, None
+class NNModel:
+    def __init__(self, input_size, output_size, output_activation="tanh"):
+        self.nn = create_model(input_size, output_size, output_activation)
 
-    def normalise(self, states, actions):
-        return (states-self.state_mean)/self.state_std, (actions-self.action_mean)/self.action_std
-
-    def train(self, states, actions, EPOCHS):
-        if None in [self.state_mean, self.state_std, self.action_mean, self.action_std]:
-            self.state_mean, self.state_std = np.mean(states, axis=0), np.std(states, axis=0)
-            self.action_mean, self.action_std = np.mean(actions, axis=0), np.std(actions, axis=0)
-            self.state_std[self.state_std == 0] = 1
-            self.action_std[self.action_std == 0] = 1
-        x, y = self.normalise(states, actions)
-        self.nn.fit(x=x, y=y, shuffle=True, validation_split=0.1, epochs=EPOCHS)
+    def train(self, x, y, batch_size=32):
+        self.nn.fit(x=x, y=y, batch_size=batch_size, verbose=0, shuffle=False)
         return
 
-    def predict(self, state):
-        normalised_state = (state-self.state_mean)/self.state_std
-        normalised_prediction = self.nn.predict(x=normalised_state)
-        return (normalised_prediction*self.action_std) + self.action_mean
+    def predict(self, x):
+        return self.nn.predict(x=x)
 
     def save(self):
         pickle.dump(self, open("model2", "wb"))
@@ -67,7 +55,7 @@ def main(EPOCHS):
     output_size = actions.shape[1]
     print(states.shape)
     print(actions.shape)
-    nn_policy = NNPolicy(input_size, output_size)
+    nn_policy = NNModel(input_size, output_size)
     nn_policy.train(states, actions, EPOCHS)
     nn_policy.save()
     return
@@ -76,7 +64,5 @@ def main(EPOCHS):
 
 if __name__ == "__main__":
     main(4)
-
-
     #main2()
 
