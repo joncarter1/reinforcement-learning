@@ -9,7 +9,7 @@ from keras.models import load_model
 import os
 from copy import deepcopy
 from collections import deque
-from SafeRL.ModelLearning import NNModel
+from ModelLearning import NNModel
 """
 -ve rotation = clockwise torque
 i.e. theta defined in the polar sense.
@@ -163,8 +163,9 @@ def modify_state(state_dict):
 
 
 
-def main(EPISODES, render=False, save=False, policy=human_policy):
-    learner = Learner()
+def main(EPISODES, learner=None, render=False, save=False, policy=human_policy):
+    if learner is None:
+        learner = Learner()
     ep_rewards = []
     ep_costs = []
 
@@ -234,5 +235,5 @@ if __name__ == "__main__":
         'gremlins_keepout': 0.4,
     }
     env = Engine(config)
-    #learnt_policy = pickle.load(open("jointmodel", "rb"))
-    main(EPISODES=100, render=False, policy=human_policy, save=True)
+    loaded_learner = pickle.load(open("jointmodel", "rb"))
+    main(EPISODES=100, learner=loaded_learner, render=False, policy=human_policy, save=True)
