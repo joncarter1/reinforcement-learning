@@ -131,7 +131,7 @@ def save_results(state_buffer, state_change_buffer, stats):
 def get_forward(cos_theta, path_ind, hazards_lidar):
     lidar_range = np.arange(-lidar_bins//4, lidar_bins//4 + 1)
     forward_hazards = hazards_lidar[(lidar_range+path_ind)%lidar_bins]
-    forward = 0.5*cos_theta/(10+20*np.sum(hazards_lidar[(lidar_range+path_ind)%lidar_bins]))
+    forward = 0.4*cos_theta/(5+20*np.sum(hazards_lidar[(lidar_range+path_ind)%lidar_bins]))
     return forward
 
 
@@ -236,4 +236,4 @@ if __name__ == "__main__":
     }
     env = Engine(config)
     loaded_learner = pickle.load(open("jointmodel", "rb"))
-    main(EPISODES=100, learner=loaded_learner, render=False, policy=human_policy, save=True)
+    main(EPISODES=200, learner=loaded_learner, render=False, policy=human_policy, save=True)
