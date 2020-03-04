@@ -32,12 +32,19 @@ class Learner:
         stacked_state = np.expand_dims(np.hstack(list(modified_state.values())), axis=1).T
         return self.policy.predict(stacked_state)
 
+    def model_prediction(self, state, action):
+        modified_state = modify_state(state)
+        stacked_state = np.expand_dims(np.hstack(list(modified_state.values())), axis=1).T
+        input_vector = np.hstack((stacked_state, action))
+        return self.dynamics_model.predict(input_vector)
+
     def store_transition(self, state, action, new_state):
         state_copy = modify_state(state)
         new_state_copy = modify_state(new_state)
         stacked_state = np.hstack(list(state_copy.values()))
         new_stacked_state = np.hstack(list(new_state_copy.values()))
-        stacked_transition = np.hstack((stacked_state, action, new_stacked_state))
+        delta_state = new_stacked_state-stacked_state  # Store change in state
+        stacked_transition = np.hstack((stacked_state, action, delta_state))
         self.REPLAY_MEMORY.append(stacked_transition)
         return
 
@@ -185,6 +192,14 @@ def main(EPISODES, learner=None, render=False, save=False, policy=human_policy):
             episode_reward += reward
             episode_cost += info["cost"]
             risky_state = np.min(-np.log(new_state["hazards_lidar"])) < 0.5
+            next_state_prediction = learner.model_prediction(state, action)
+            print("Last state \n")
+            print(np.hstack(list(modify_state(state).values())))
+            print("New state \n")
+            #print(modify_state(new_state))
+            print(np.hstack(list(modify_state(new_state).values())))
+            print("Prediction:\n")
+            print(next_state_prediction)
             if save:
                 if risky_state or np.random.random() < 0.1:
                     learner.store_transition(state, action, new_state)
@@ -236,4 +251,4 @@ if __name__ == "__main__":
     }
     env = Engine(config)
     loaded_learner = pickle.load(open("jointmodel", "rb"))
-    main(EPISODES=200, learner=loaded_learner, render=False, policy=human_policy, save=True)
+    main(EPISODES=200, learner=loaded_learner, render=True, policy=loaded_learner, save=False)
