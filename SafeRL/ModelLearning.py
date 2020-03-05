@@ -11,11 +11,8 @@ import numpy as np
 import pickle
 
 
-def create_model(input_size, output_size, output_activation="tanh"):
-    #lr = 0.01
-    dr = 0.0
-    l2_penalty = 0.0
-    l1_dims, l2_dims, l3_dims, l4_dims = 500, 500, 500, 500
+def create_model(input_size, output_size, output_activation="tanh", dr=0.0, l2_penalty=0.0):
+    l1_dims, l2_dims, l3_dims, l4_dims = 500, 500, 500
     input_layer = Input(shape=(input_size,))
     dense1 = Dense(l1_dims, kernel_regularizer=l2(l2_penalty), bias_regularizer=l2(l2_penalty), activation="relu")(input_layer)
     dropout1 = Dropout(dr)(dense1, training=True)
@@ -23,9 +20,7 @@ def create_model(input_size, output_size, output_activation="tanh"):
     dropout2 = Dropout(dr)(dense2, training=True)
     dense3 = Dense(l3_dims, kernel_regularizer=l2(l2_penalty), bias_regularizer=l2(l2_penalty), activation="relu")(dropout2)
     dropout3 = Dropout(dr)(dense3, training=True)
-    dense4 = Dense(l3_dims, kernel_regularizer=l2(l2_penalty), bias_regularizer=l2(l2_penalty), activation="relu")(dropout3)
-    dropout4 = Dropout(dr)(dense4, training=True)
-    output_layer = Dense(output_size, activation=output_activation)(dropout4)
+    output_layer = Dense(output_size, activation=output_activation)(dropout3)
     model_nn = Model(input=[input_layer], output=[output_layer])
     model_nn.compile(optimizer="adam", loss="mse", metrics=['accuracy'])
     return model_nn

@@ -10,6 +10,7 @@ import os
 from copy import deepcopy
 from collections import deque
 from ModelLearning import NNModel
+import matplotlib.pyplot as plt
 """
 -ve rotation = clockwise torque
 i.e. theta defined in the polar sense.
@@ -66,6 +67,7 @@ class Learner:
     def save(self, model_name):
         pickle.dump(self, open(model_name, "wb"))
 
+
 def sigmoid(x):
     return 2 / (1 + np.exp(-x)) - 1
 
@@ -83,6 +85,14 @@ def nn_policy(state, nn_model):
 
 def angle_invert(sin_angle, cos_angle):
     return np.arccos(cos_angle)*np.sign(sin_angle)
+
+
+def get_robot_angle(centre_compass, position):
+    theta2 = angle_invert(*centre_compass[::-1])
+    theta1 = np.arctan(position[1]/position[0])
+    print("theta1", theta1*(180/np.pi))
+    print("theta2", theta2*(180/np.pi))
+    return theta2 - theta1 - np.pi/2
 
 
 def lidar_mapping(angle):
@@ -164,10 +174,10 @@ def modify_state(state_dict):
     modified_state_dict = deepcopy(state_dict)
     del modified_state_dict["magnetometer"]  # Useless state measurement.
     del modified_state_dict["gyro"]  # Useless state measurement.
+    #modified_state_dict["gyro"] = modified_state_dict["gyro"][2]  # Just keep k value
     for key in ["accelerometer", "velocimeter"]:
         modified_state_dict[key] = modified_state_dict[key][:2]  # Remove z axis value
     return modified_state_dict
-
 
 
 def main(EPISODES, learner=None, render=False, save=False, policy=human_policy):
@@ -184,22 +194,36 @@ def main(EPISODES, learner=None, render=False, save=False, policy=human_policy):
         state = env.reset()
         if render:
             env.render()
-
+        print(state)
+        print(env.hazards_pos)
+        print(env.goal_pos)
+        #print(state["vision"].shape)
+        #plt.figure()
+        #plt.imshow(np.flip(state["vision"], axis=0))
+        #plt.show()
         done = False
         while not done:
             action = policy(state)
+            if action[:,1] != 0:
+                print(state)
+                print(env.robot_pos)
+
             new_state, reward, done, info = env.step(action)
             episode_reward += reward
             episode_cost += info["cost"]
             risky_state = np.min(-np.log(new_state["hazards_lidar"])) < 0.5
-            next_state_prediction = learner.model_prediction(state, action)
-            print("Last state \n")
-            print(np.hstack(list(modify_state(state).values())))
+            #print(env.robot_pos)
+            #print(env.hazards_pos)
+
+            #next_state_prediction = learner.model_prediction(state, action)
+            #print("Last state \n")
+            #stacked_state = np.hstack(list(modify_state(state).values()))
+            """print(stacked_state)
             print("New state \n")
             #print(modify_state(new_state))
             print(np.hstack(list(modify_state(new_state).values())))
             print("Prediction:\n")
-            print(next_state_prediction)
+            print(stacked_state+next_state_prediction)"""
             if save:
                 if risky_state or np.random.random() < 0.1:
                     learner.store_transition(state, action, new_state)
@@ -224,7 +248,6 @@ def main(EPISODES, learner=None, render=False, save=False, policy=human_policy):
     return
 
 lidar_bins = 32
-lidar_factor = 1
 
 
 if __name__ == "__main__":
@@ -237,6 +260,8 @@ if __name__ == "__main__":
         'observe_goal_lidar': False,
         'observe_hazards': True,
         'observe_vases': False,
+        'observe_circle': True,
+        'observe_vision': False,
         'observe_gremlins': False,
         'constrain_hazards': True,
         'constrain_vases': False,
