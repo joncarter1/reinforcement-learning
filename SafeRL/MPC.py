@@ -82,7 +82,6 @@ def form_state(state_dict, position):
     for key in ["accelerometer", "velocimeter"]:
         modified_state_dict[key] = modified_state_dict[key][:2]  # Remove z axis value
 
-    print(modified_state_dict)
     stacked_state = np.hstack(list(modified_state_dict.values()))
     return np.hstack((position, stacked_state))
 

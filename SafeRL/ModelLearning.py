@@ -12,7 +12,7 @@ import pickle
 
 
 def create_model(input_size, output_size, output_activation="tanh", dr=0.0, l2_penalty=0.0):
-    l1_dims, l2_dims, l3_dims, l4_dims = 500, 500, 500
+    l1_dims, l2_dims, l3_dims = 500, 500, 500
     input_layer = Input(shape=(input_size,))
     dense1 = Dense(l1_dims, kernel_regularizer=l2(l2_penalty), bias_regularizer=l2(l2_penalty), activation="relu")(input_layer)
     dropout1 = Dropout(dr)(dense1, training=True)

@@ -93,7 +93,7 @@ if __name__ == "__main__":
         'observe_vases': True,
         'observe_gremlins': True,
         'constrain_hazards': True,
-        'lidar_max_dist': 3,
+        'lidar_max_dist': None,
         'lidar_num_bins': 16,
         'hazards_num': 6,
         'vases_num': 3,
