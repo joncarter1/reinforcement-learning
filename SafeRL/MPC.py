@@ -27,9 +27,9 @@ class MPCLearner:
         self.no_hazards = 10
         self.action_dims = 2
         self.combined_dims = self.state_dims+self.action_dims
-        self.dynamics_model = NNModel(self.combined_dims, self.state_dims, "linear")
+        self.dynamics_model = NNModel(self.combined_dims, self.state_dims, "linear", l2_penalty=1e-3)
         self.policy_dims = self.state_dims + self.no_hazards*2
-        self.policy = NNModel(self.policy_dims, self.action_dims, "tanh")
+        self.policy = NNModel(self.policy_dims, self.action_dims, "tanh", l2_penalty=1e-3)
 
     def __call__(self, robot_state, hazard_vector):
         input_vector = np.expand_dims(np.hstack((robot_state, hazard_vector)), axis=1).T
@@ -113,11 +113,11 @@ def main(EPISODES, mpc_learner=None, render=False, save=False, policy=human_poli
             hazards = np.array(env.hazards_pos)[:, :2]
             flat_hazard_vector = deepcopy(hazards).flatten()
 
-            if save: # and (compute_cost(new_position, hazards) > 0.1 or np.random.random() < 0.3):
+            if save and (compute_cost(new_position, hazards) > 0.1 or np.random.random() < 0.3):
                 stored += 1
                 mpc_learner.store_transition(robot_state, action, flat_hazard_vector, new_robot_state)
             total += 1
-            if save:# and np.random.random() < 0.3:
+            if save and np.random.random() < 0.3:
                 mpc_learner.train_models()
             env_state = new_env_state
             robot_state = new_robot_state
@@ -164,7 +164,7 @@ if __name__ == "__main__":
 
     training = True
     if training:
-        main(EPISODES=200, mpc_learner=None, render=False, policy=human_policy, save=True)
+        main(EPISODES=1000, mpc_learner=None, render=False, policy=human_policy, save=True)
     else:
         loaded_learner = pickle.load(open("mpcmodel", "rb"))
         main(EPISODES=200, mpc_learner=loaded_learner, render=True, policy=loaded_learner, save=False)
