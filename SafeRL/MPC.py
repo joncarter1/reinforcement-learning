@@ -9,7 +9,7 @@ from keras.models import load_model
 import os
 from copy import deepcopy
 from collections import deque
-from ModelLearning import NNModel
+from ModelLearning import NNModel, create_model
 from Controller import human_policy, Learner
 import matplotlib.pyplot as plt
 """
@@ -27,9 +27,9 @@ class MPCLearner:
         self.no_hazards = 10
         self.action_dims = 2
         self.combined_dims = self.state_dims+self.action_dims
-        self.dynamics_model = NNModel(self.combined_dims, self.state_dims, "linear", l2_penalty=1e-3)
+        self.dynamics_model = create_model(self.combined_dims, self.state_dims, "linear", l2_penalty=1e-3)
         self.policy_dims = self.state_dims + self.no_hazards*2
-        self.policy = NNModel(self.policy_dims, self.action_dims, "tanh", l2_penalty=1e-3)
+        self.policy = create_model(self.policy_dims, self.action_dims, "tanh", l2_penalty=1e-3)
 
     def __call__(self, robot_state, hazard_vector):
         input_vector = np.expand_dims(np.hstack((robot_state, hazard_vector)), axis=1).T
@@ -52,13 +52,13 @@ class MPCLearner:
         minibatch = np.array(random.sample(self.REPLAY_MEMORY, self.MINIBATCH_SIZE))
         policy_inds = np.r_[:self.state_dims, self.combined_dims:self.combined_dims + self.no_hazards*2]
 
-        self.dynamics_model.train(x=minibatch[:, :self.combined_dims],
+        self.dynamics_model.fit(x=minibatch[:, :self.combined_dims],
                                 y=minibatch[:, -self.state_dims:],
-                                batch_size=self.MINIBATCH_SIZE)
+                                batch_size=self.MINIBATCH_SIZE, verbose=0, shuffle=False)
 
-        self.policy.train(x=minibatch[:, policy_inds],
+        self.policy.fit(x=minibatch[:, policy_inds],
                         y=minibatch[:, self.state_dims:self.combined_dims],
-                        batch_size=self.MINIBATCH_SIZE)
+                        batch_size=self.MINIBATCH_SIZE, verbose=0, shuffle=False)
         return
 
     def save(self, model_name):
