@@ -41,7 +41,7 @@ class MPCLearner:
 
     def store_transition(self, robot_state, action, hazards, new_robot_state):
         delta_state = new_robot_state - robot_state  # Store change in state
-        stacked_transition = np.hstack((robot_state, hazards, action, delta_state))
+        stacked_transition = np.hstack((robot_state, action, hazards, delta_state))
         self.REPLAY_MEMORY.append(stacked_transition)
         return
 
@@ -161,5 +161,5 @@ if __name__ == "__main__":
         'gremlins_keepout': 0.4,
     }
     env = Engine(config)
-    #loaded_learner = pickle.load(open("mpcmodel", "rb"))
-    main(EPISODES=200, mpc_learner=None, render=False, policy=human_policy, save=True)
+    loaded_learner = pickle.load(open("mpcmodel", "rb"))
+    main(EPISODES=200, mpc_learner=loaded_learner, render=True, policy=loaded_learner, save=False)
