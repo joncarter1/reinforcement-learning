@@ -179,7 +179,7 @@ if __name__ == "__main__":
 
     training = True
     if training:
-        main(EPISODES=10, mpc_learner=None, render=False, policy=human_policy, save=True)
+        main(EPISODES=1000, mpc_learner=None, render=False, policy=human_policy, save=True)
     else:
         loaded_learner = pickle.load(open("mpcmodel", "rb"))
         main(EPISODES=10, mpc_learner=loaded_learner, render=True, policy=loaded_learner, save=False)
