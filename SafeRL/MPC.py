@@ -52,13 +52,11 @@ class MPCLearner:
         return
 
     def train_models(self):
-        minibatch = np.array(random.sample(self.REPLAY_MEMORY, self.MINIBATCH_SIZE))
-        policy_inds = np.r_[:self.state_dims, self.combined_dims:self.combined_dims + self.hazard_dims]
-
         if len(self.REPLAY_MEMORY) < self.MIN_REPLAY_MEMORY_SIZE:
-            print(minibatch[:, policy_inds].shape)
             return
 
+        minibatch = np.array(random.sample(self.REPLAY_MEMORY, self.MINIBATCH_SIZE))
+        policy_inds = np.r_[:self.state_dims, self.combined_dims:self.combined_dims + self.hazard_dims]
 
         state_action_vector = minibatch[:, :self.combined_dims]
         next_state_vector = minibatch[:, -self.state_dims:]
