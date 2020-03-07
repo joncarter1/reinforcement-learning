@@ -10,24 +10,29 @@ import os
 from copy import deepcopy
 from collections import deque
 from ModelLearning import NNModel, create_model
-from Controller import human_policy, Learner
+from Controller import human_policy
 import matplotlib.pyplot as plt
+
 """
 -ve rotation = clockwise torque
 i.e. theta defined in the polar sense.
 """
 
+def ensure_dir(directory):
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+
 class MPCLearner:
     def __init__(self):
-        self.MEMORY_SIZE = 30000
-        self.MIN_REPLAY_MEMORY_SIZE = 2000  # Minimum number of steps in a memory to start training
+        self.MEMORY_SIZE = 50000
+        self.MIN_REPLAY_MEMORY_SIZE = 5000  # Minimum number of steps in a memory to start training
         self.REPLAY_MEMORY = deque(maxlen=self.MEMORY_SIZE)
         self.MINIBATCH_SIZE = 32
         self.state_dims = 10
         self.hazard_dims = 32
         self.action_dims = 2
         self.combined_dims = self.state_dims+self.action_dims
-        self.policy_dims = self.state_dims + self.no_hazards * 2
+        self.policy_dims = self.state_dims + self.hazard_dims
         l2_penalty = 0
         dropout = 0
         self.dynamics_model = create_model(self.combined_dims, self.state_dims, "linear", l2_penalty=l2_penalty)
@@ -91,9 +96,16 @@ def form_state(state_dict, position):
     return np.hstack((position, stacked_state))
 
 
+def save_results(memory_buffer):
+    ensure_dir("policy_data")
+    pickle.dump(memory_buffer, open(f"policy_data/replay_memory", "wb"))
+    return True
+
 def main(EPISODES, mpc_learner=None, render=False, save=False, policy=human_policy):
     if mpc_learner is None:
         mpc_learner = MPCLearner()
+
+    full = False
 
     for i in tqdm(range(EPISODES)):
         stored, total, episode_reward, episode_cost = 0, 0, 0, 0
@@ -107,43 +119,36 @@ def main(EPISODES, mpc_learner=None, render=False, save=False, policy=human_poli
             if policy == human_policy:
                 action = human_policy(env_state)
             else:
-                hazards = np.array(env.hazards_pos)[:, :2]
-                flat_hazard_vector = deepcopy(hazards).flatten()
-                action = policy(robot_state, flat_hazard_vector)
+                action = policy(robot_state, env_state["hazards_lidar"])
             new_env_state, reward, done, info = env.step(action)
             episode_reward += reward
             episode_cost += info["cost"]
             new_position = env.robot_pos[:2]
             predicted_state = mpc_learner.model_prediction(robot_state, action)
             new_robot_state = form_state(new_env_state, new_position)
-            print("Old state", robot_state)
-            print("Prediction")
-            print(robot_state + predicted_state)
-            print(new_robot_state)
-            hazards = np.array(env.hazards_pos)[:, :2]
-            flat_hazard_vector = deepcopy(hazards).flatten()
 
-            if save:# and (compute_cost(new_position, hazards) > 0.1 or np.random.random() < 0.3):
+            if save:
                 stored += 1
-                mpc_learner.store_transition(robot_state, action, flat_hazard_vector, new_robot_state)
+                mpc_learner.store_transition(robot_state, action, env_state["hazards_lidar"], new_robot_state)
             total += 1
-            if save and 1==2:#np.random.random() < 0.3:
+            if save and np.random.random() < 0.2:
                 mpc_learner.train_models()
             env_state = new_env_state
             robot_state = new_robot_state
-            if len(mpc_learner.REPLAY_MEMORY) == mpc_learner.MEMORY_SIZE:
-                print(f"Stopped at episode {i}")
-                break
+
             if render:
                 env.render()
 
         print(f"Episode {i}, reward {episode_reward}, cost {episode_cost}, stored {stored}/{total}")
 
         if save and i != 0 and not i%(EPISODES//5):
-            mpc_learner.save("mpcmodel")
+            save_results(mpc_learner.REPLAY_MEMORY)
+            mpc_learner.save("mpcmodel2")
 
     if save:
-        mpc_learner.save("mpcmodel")
+        print(len(mpc_learner.REPLAY_MEMORY))
+        save_results(mpc_learner.REPLAY_MEMORY)
+        mpc_learner.save("mpcmodel2")
     return
 
 
@@ -176,7 +181,7 @@ if __name__ == "__main__":
 
     training = True
     if training:
-        main(EPISODES=1000, mpc_learner=None, render=False, policy=human_policy, save=True)
+        main(EPISODES=10, mpc_learner=None, render=False, policy=human_policy, save=True)
     else:
         loaded_learner = pickle.load(open("mpcmodel", "rb"))
-        main(EPISODES=1, mpc_learner=loaded_learner, render=True, policy=loaded_learner, save=False)
+        main(EPISODES=10, mpc_learner=loaded_learner, render=True, policy=loaded_learner, save=False)
