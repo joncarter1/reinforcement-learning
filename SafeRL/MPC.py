@@ -24,12 +24,14 @@ class MPCLearner:
         self.REPLAY_MEMORY = deque(maxlen=self.MEMORY_SIZE)
         self.MINIBATCH_SIZE = 32
         self.state_dims = 10
-        self.no_hazards = 10
+        self.hazard_dims = 32
         self.action_dims = 2
         self.combined_dims = self.state_dims+self.action_dims
-        self.dynamics_model = create_model(self.combined_dims, self.state_dims, "linear", l2_penalty=1e-3)
-        self.policy_dims = self.state_dims + self.no_hazards*2
-        self.policy = create_model(self.policy_dims, self.action_dims, "tanh", l2_penalty=1e-3)
+        self.policy_dims = self.state_dims + self.no_hazards * 2
+        l2_penalty = 0
+        dropout = 0
+        self.dynamics_model = create_model(self.combined_dims, self.state_dims, "linear", l2_penalty=l2_penalty)
+        self.policy = create_model(self.policy_dims, self.action_dims, "tanh", l2_penalty=l2_penalty)
 
     def __call__(self, robot_state, hazard_vector):
         input_vector = np.expand_dims(np.hstack((robot_state, hazard_vector)), axis=1).T
@@ -40,20 +42,24 @@ class MPCLearner:
         return self.dynamics_model.predict(input_vector)
 
     def store_transition(self, robot_state, action, hazards, new_robot_state):
-        delta_state = new_robot_state - robot_state  # Store change in state
-        stacked_transition = np.hstack((robot_state, action, hazards, delta_state))
+        stacked_transition = np.hstack((robot_state, action, hazards, new_robot_state))
         self.REPLAY_MEMORY.append(stacked_transition)
         return
 
     def train_models(self):
+        minibatch = np.array(random.sample(self.REPLAY_MEMORY, self.MINIBATCH_SIZE))
+        policy_inds = np.r_[:self.state_dims, self.combined_dims:self.combined_dims + self.hazard_dims]
+
         if len(self.REPLAY_MEMORY) < self.MIN_REPLAY_MEMORY_SIZE:
+            print(minibatch[:, policy_inds].shape)
             return
 
-        minibatch = np.array(random.sample(self.REPLAY_MEMORY, self.MINIBATCH_SIZE))
-        policy_inds = np.r_[:self.state_dims, self.combined_dims:self.combined_dims + self.no_hazards*2]
 
-        self.dynamics_model.fit(x=minibatch[:, :self.combined_dims],
-                                y=minibatch[:, -self.state_dims:],
+        state_action_vector = minibatch[:, :self.combined_dims]
+        next_state_vector = minibatch[:, -self.state_dims:]
+
+        self.dynamics_model.fit(x=state_action_vector,
+                                y=next_state_vector,
                                 batch_size=self.MINIBATCH_SIZE, verbose=0, shuffle=False)
 
         self.policy.fit(x=minibatch[:, policy_inds],
@@ -81,7 +87,6 @@ def form_state(state_dict, position):
     modified_state_dict["gyro"] = modified_state_dict["gyro"][2]  # Just keep k value
     for key in ["accelerometer", "velocimeter"]:
         modified_state_dict[key] = modified_state_dict[key][:2]  # Remove z axis value
-
     stacked_state = np.hstack(list(modified_state_dict.values()))
     return np.hstack((position, stacked_state))
 
@@ -109,19 +114,26 @@ def main(EPISODES, mpc_learner=None, render=False, save=False, policy=human_poli
             episode_reward += reward
             episode_cost += info["cost"]
             new_position = env.robot_pos[:2]
+            predicted_state = mpc_learner.model_prediction(robot_state, action)
             new_robot_state = form_state(new_env_state, new_position)
+            print("Old state", robot_state)
+            print("Prediction")
+            print(robot_state + predicted_state)
+            print(new_robot_state)
             hazards = np.array(env.hazards_pos)[:, :2]
             flat_hazard_vector = deepcopy(hazards).flatten()
 
-            if save and (compute_cost(new_position, hazards) > 0.1 or np.random.random() < 0.3):
+            if save:# and (compute_cost(new_position, hazards) > 0.1 or np.random.random() < 0.3):
                 stored += 1
                 mpc_learner.store_transition(robot_state, action, flat_hazard_vector, new_robot_state)
             total += 1
-            if save and np.random.random() < 0.3:
+            if save and 1==2:#np.random.random() < 0.3:
                 mpc_learner.train_models()
             env_state = new_env_state
             robot_state = new_robot_state
-
+            if len(mpc_learner.REPLAY_MEMORY) == mpc_learner.MEMORY_SIZE:
+                print(f"Stopped at episode {i}")
+                break
             if render:
                 env.render()
 
@@ -167,4 +179,4 @@ if __name__ == "__main__":
         main(EPISODES=1000, mpc_learner=None, render=False, policy=human_policy, save=True)
     else:
         loaded_learner = pickle.load(open("mpcmodel", "rb"))
-        main(EPISODES=200, mpc_learner=loaded_learner, render=True, policy=loaded_learner, save=False)
+        main(EPISODES=1, mpc_learner=loaded_learner, render=True, policy=loaded_learner, save=False)
