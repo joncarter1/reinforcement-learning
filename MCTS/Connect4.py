@@ -6,8 +6,9 @@ from copy import deepcopy
 
 class ConnectGame:
     def __init__(self, initial_state=None):
-        self.board_dims = (6,7)
+        self.board_dims = (6, 7)
         self.rows, self.cols = self.board_dims
+        self.last_action = None
         if initial_state is not None:
             self.state = initial_state
         else:
@@ -28,6 +29,7 @@ class ConnectGame:
 
     def take_action(self, col_no, player_no):
         self.state[self.col_tally[col_no], col_no] = player_no
+        self.last_action = col_no
         self.col_tally = np.sum(np.abs(self.state), axis=0, dtype=int)
         assert 0 <= (len(np.where(self.state == -1)[0])-len(np.where(self.state == 1)[0])) <= 1  # 0,1 counter no. diff.
         return False
@@ -55,11 +57,27 @@ class ConnectGame:
         plt.show(block=False)
 
     def check_win(self):
+        if self.last_action is None:
+            return False, 0
         sum_filter = np.ones(4)
         vwin = np.min(np.apply_along_axis(lambda m: np.convolve(m, sum_filter, 'same'), axis=0, arr=self.state))
         hwin = np.min(np.apply_along_axis(lambda m: np.convolve(m, sum_filter, 'same'), axis=1, arr=self.state))
         vwin2 = np.max(np.apply_along_axis(lambda m: np.convolve(m, sum_filter, 'same'), axis=0, arr=self.state))
         hwin2 = np.max(np.apply_along_axis(lambda m: np.convolve(m, sum_filter, 'same'), axis=1, arr=self.state))
+        last_action_column = self.state[:, self.last_action]
+        last_action_row = self.state[self.col_tally[self.last_action]-1, :]
+        offset = self.last_action-self.col_tally[self.last_action]-1
+        last_antidiag_arr = np.flipud(self.state).diagonal(offset=offset)
+        print(self.state)
+        print(np.flipud(self.state))
+        last_diag_arr = np.diagonal(self.state, offset=offset)
+        print(self.last_action)
+        print(self.col_tally[self.last_action]-1)
+        print(offset)
+        print("COL", last_action_column)
+        print("ROW", last_action_row)
+        print("DIAG", last_antidiag_arr)
+        print("ANTIDIAG", last_antidiag_arr)
         if np.min([hwin, vwin]) == -4:
             return True, -1
         elif np.max([hwin2, vwin2]) == 4:
@@ -90,6 +108,7 @@ class ConnectGame:
     def clone(self):
         """Return copy of board for simulations."""
         return deepcopy(self)
+
 
 if __name__ == "__main__":
     cg = ConnectGame()

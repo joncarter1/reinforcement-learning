@@ -105,6 +105,7 @@ class MCTSagent:
         best_child = sorted(self.root_node.children.values(), key=sort_key)[-1]
         return self.root_node.children, best_child  # Return child with largest win %
 
+
 if __name__ == "__main__":
     cg = ConnectGame()
     plt.ion()
@@ -113,7 +114,7 @@ if __name__ == "__main__":
     user = random.choice([-1, 1])
     cpu = 1 if user == -1 else -1
     mcts = MCTSagent(cg)
-    initial_iterations, iterations = 2000, 2000
+    initial_iterations, iterations = 1, 1
     children, best_child = mcts.run(initial_iterations)
     if cpu == -1:  # Computer goes first
         cg.take_action(best_child.action, cpu)

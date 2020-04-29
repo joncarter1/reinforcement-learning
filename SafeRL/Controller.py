@@ -16,58 +16,6 @@ import matplotlib.pyplot as plt
 i.e. theta defined in the polar sense.
 """
 
-class Learner:
-    def __init__(self):
-        self.MEMORY_SIZE = 50000
-        self.MIN_REPLAY_MEMORY_SIZE = 500  # Minimum number of steps in a memory to start training
-        self.REPLAY_MEMORY = deque(maxlen=self.MEMORY_SIZE)
-        self.MINIBATCH_SIZE = 32
-        self.state_dims = 39
-        self.action_dims = 2
-        self.combined_dims = self.state_dims+self.action_dims
-        self.dynamics_model = NNModel(self.combined_dims, self.state_dims, "linear")
-        self.policy = NNModel(self.state_dims, self.action_dims, "tanh")
-
-    def __call__(self, state):
-        modified_state = modify_state(state)
-        stacked_state = np.expand_dims(np.hstack(list(modified_state.values())), axis=1).T
-        return self.policy.predict(stacked_state)
-
-    def model_prediction(self, state, action):
-        modified_state = modify_state(state)
-        stacked_state = np.expand_dims(np.hstack(list(modified_state.values())), axis=1).T
-        input_vector = np.hstack((stacked_state, action))
-        return self.dynamics_model.predict(input_vector)
-
-    def store_transition(self, state, action, new_state):
-        state_copy = modify_state(state)
-        new_state_copy = modify_state(new_state)
-        stacked_state = np.hstack(list(state_copy.values()))
-        new_stacked_state = np.hstack(list(new_state_copy.values()))
-        delta_state = new_stacked_state-stacked_state  # Store change in state
-        stacked_transition = np.hstack((stacked_state, action, delta_state))
-        self.REPLAY_MEMORY.append(stacked_transition)
-        return
-
-    def train_models(self):
-        if len(self.REPLAY_MEMORY) < self.MIN_REPLAY_MEMORY_SIZE:
-            return
-
-        minibatch = np.array(random.sample(self.REPLAY_MEMORY, self.MINIBATCH_SIZE))
-
-        self.dynamics_model.train(x=minibatch[:, :self.combined_dims],
-                                y=minibatch[:, self.combined_dims:],
-                                batch_size=self.MINIBATCH_SIZE)
-
-        self.policy.train(x=minibatch[:, :self.state_dims],
-                        y=minibatch[:, self.state_dims:self.combined_dims],
-                        batch_size=self.MINIBATCH_SIZE)
-        return
-
-    def save(self, model_name):
-        pickle.dump(self, open(model_name, "wb"))
-
-
 def sigmoid(x):
     return 2 / (1 + np.exp(-x)) - 1
 
@@ -87,86 +35,84 @@ def angle_invert(sin_angle, cos_angle):
     return np.arccos(cos_angle)*np.sign(sin_angle)
 
 
-def get_robot_angle(centre_compass, position):
-    theta2 = angle_invert(*centre_compass[::-1])
-    theta1 = np.arctan(position[1]/position[0])
-    print("theta1", theta1*(180/np.pi))
-    print("theta2", theta2*(180/np.pi))
-    return theta2 - theta1 - np.pi/2
-
-
-def lidar_mapping(angle):
-    """Get index of lidar closest to a given angle."""
-    conv_angle = angle % 360  # Convert to 0 - 360 range.
-    angular_segment = 360/lidar_bins
-    index = int(np.round(conv_angle / angular_segment) % lidar_bins)
-    return index
-
-
 default_dist = 2
 
 
-def path_finder(hazard_lidar, goal_ind):
-    safety_threshold = 0.5
-    best_safety = None  # Safest path direction found
-    forward_range = np.arange(-4, 5)
-    linear_lidar = -np.log(hazard_lidar)
-    linear_lidar[linear_lidar > default_dist] = default_dist
-    safe_directions = np.where(linear_lidar > safety_threshold)[0]
-    sort_key = lambda x: min(abs(x-goal_ind), lidar_bins - abs(x-goal_ind))  # Sort safe directions by angle to goal.
-    sorted_safe_directions = sorted(safe_directions, key=sort_key)
+def compute_cost(position, hazards):
+    sigma = 0.3
+    displacements = hazards - position
+    distances = np.einsum('ij,ji->i', displacements, displacements.T)
+    return np.sum(np.exp(-distances / (sigma ** 2)))
 
 
-    for direction in sorted_safe_directions:
-        safety2 = 1
-        i = 1
-        direction_safe = True
+def path_finder(robot_state, goal_pos, hazards):
+    lookahead_dist = 0.4
+    directions = 501
+    goal_ind = (directions//2)
+    sigma = 0.3
+    sigma_a = np.pi
+    safety_threshold = 0.3
+    angles = np.linspace(-np.pi/2, np.pi/2, directions)
+    xs = np.stack((np.sin(angles), np.cos(angles)))*lookahead_dist
+    displacement_vector = -robot_state[:2]  # Vector from robot to goal
+    displacement_vector /= np.linalg.norm(displacement_vector)
+    sin, cos = displacement_vector
+    rotation_matrix = np.array([[cos, sin], [-sin, cos]])
+    robot_pos = (goal_pos+robot_state[:2]).reshape((1, 2, 1))
+    trajectories = robot_pos + np.expand_dims(rotation_matrix@xs, axis=0)
+    hazards = np.expand_dims(hazards, axis=-1)
+    stacked_hazards = np.repeat(hazards, directions, axis=2)
+    displacements = stacked_hazards-trajectories
+    sq_distances = np.einsum('ij...,ji...->i...', displacements, np.swapaxes(displacements, 0, 1))
+    costs = np.sum(np.exp(-sq_distances/(sigma**2)), axis=0)
+    angle_penalties = 1-np.exp(-angles**2/(sigma_a**2))
+    l2 = 1
+    angle_values = angle_penalties+l2*costs
+    path_ind = np.argmin(angle_values)
+    delta_angle = angles[path_ind]*180/np.pi
+    cost = costs[path_ind]
+    return delta_angle, cost
 
-        # Expand radar around direction summing number of safe adjacent directions.
-        while direction_safe and i < 7:
-            for j in [i, -i]:
-                if (direction + j) % lidar_bins in sorted_safe_directions or direction + j in sorted_safe_directions:
-                    safety2 += 1
-                else:
-                    direction_safe = False
-            i += 1
 
-        if best_safety is None or safety2 > best_safety:
-            best_safety = safety2
-            best_direction = direction
-
-    return best_direction, best_safety
+REPLAY_MEMORY = []
 
 
-def save_results(state_buffer, state_change_buffer, stats):
-    pickle.dump(state_buffer, open(f"policy_data/state_action_buffer", "wb"))
-    pickle.dump(state_change_buffer, open(f"policy_data/delta_state_buffer", "wb"))
-    pickle.dump(stats, open(f"policy_data/episode_stats", "wb"))
+def store_transition(robot_state, action, hazards, new_robot_state):
+    stacked_transition = np.hstack((robot_state, action, hazards, new_robot_state))
+    REPLAY_MEMORY.append(stacked_transition)
+    return
+
+
+def save_results(memory_buffer):
+    pickle.dump(memory_buffer, open(f"policy_data/replay_memory", "wb"))
     return True
 
 
-def get_forward(cos_theta, path_ind, hazards_lidar):
-    lidar_range = np.arange(-lidar_bins//4, lidar_bins//4 + 1)
-    forward_hazards = hazards_lidar[(lidar_range+path_ind)%lidar_bins]
-    forward = 0.4*cos_theta/(5+20*np.sum(hazards_lidar[(lidar_range+path_ind)%lidar_bins]))
-    return forward
+def get_forward(path_cost):
+    return 0.01*(np.exp(-5*path_cost))
 
 
-def human_policy(new_state):
+def safe_policy(robot_state, goal_pos, hazard_array):
+    velocity = np.linalg.norm(robot_state[7:9])
+    angular_velocity = robot_state[-1]
+    k1, k2 = 0, 0
+    return np.array([-k1*velocity, -k2*angular_velocity])
+
+
+def human_policy(robot_state, goal_pos, hazard_array):
     """Hand crafted controller for problem."""
-    goal_compass = new_state["goal_compass"]
-    cos_theta, sin_theta = goal_compass
+    cos_theta, sin_theta = np.clip(robot_state[3:5], -1, 1) #goal_compass
     goal_angle = angle_invert(sin_theta, cos_theta)*180/np.pi
-    goal_ind = lidar_mapping(goal_angle)
-
-    hazards_lidar = new_state["hazards_lidar"]
-    path_ind, path_safety = path_finder(hazards_lidar, goal_ind)
-    target_angle = (360/lidar_bins)*path_ind
-    if target_angle > 180:
-        target_angle = target_angle - 360
-    forward = get_forward(cos_theta, path_ind, hazards_lidar)
+    delta_angle, cost = path_finder(robot_state, goal_pos, hazard_array)
+    new_target_angle = goal_angle - delta_angle
+    forward = get_forward(cost)
     k = 0.1
-    rotation = sigmoid(k*target_angle)
+    rotation = sigmoid(k*new_target_angle)
+    if np.isnan(rotation) or np.isnan(forward):
+        print(robot_state)
+        print(sin_theta)
+        print(cos_theta)
+        raise ValueError
     return np.array([forward, rotation])
 
 
@@ -177,14 +123,14 @@ def modify_state(state_dict):
     #modified_state_dict["gyro"] = modified_state_dict["gyro"][2]  # Just keep k value
     for key in ["accelerometer", "velocimeter"]:
         modified_state_dict[key] = modified_state_dict[key][:2]  # Remove z axis value
+    print(state_dict)
     return modified_state_dict
 
 
-def main(EPISODES, learner=None, render=False, save=False, policy=human_policy):
-    if learner is None:
-        learner = Learner()
+def main(EPISODES, render=False, save=False, policy=human_policy):
     ep_rewards = []
     ep_costs = []
+    actions = []
 
     for i in tqdm(range(EPISODES)):
         stored = 0
@@ -194,39 +140,20 @@ def main(EPISODES, learner=None, render=False, save=False, policy=human_policy):
         state = env.reset()
         if render:
             env.render()
-        print(state)
-        print(env.hazards_pos)
-        print(env.goal_pos)
-        #print(state["vision"].shape)
-        #plt.figure()
-        #plt.imshow(np.flip(state["vision"], axis=0))
-        #plt.show()
         done = False
         while not done:
-            action = policy(state)
-            if action[:,1] != 0:
-                print(state)
-                print(env.robot_pos)
-
+            if np.random.random() < 0.3:
+                action = np.random.uniform(-1, 1, size=(1,2))
+            else:
+                action = policy(state, env_state, env).reshape(1, 2)
+            actions.append(action.T)
+            print(state)
             new_state, reward, done, info = env.step(action)
             episode_reward += reward
             episode_cost += info["cost"]
             risky_state = np.min(-np.log(new_state["hazards_lidar"])) < 0.5
-            #print(env.robot_pos)
-            #print(env.hazards_pos)
-
-            #next_state_prediction = learner.model_prediction(state, action)
-            #print("Last state \n")
-            #stacked_state = np.hstack(list(modify_state(state).values()))
-            """print(stacked_state)
-            print("New state \n")
-            #print(modify_state(new_state))
-            print(np.hstack(list(modify_state(new_state).values())))
-            print("Prediction:\n")
-            print(stacked_state+next_state_prediction)"""
             if save:
                 if risky_state or np.random.random() < 0.1:
-                    learner.store_transition(state, action, new_state)
                     stored += 1
                 if np.random.random() < 0.3:
                     learner.train_models()
@@ -237,6 +164,8 @@ def main(EPISODES, learner=None, render=False, save=False, policy=human_policy):
                 env.render()
 
         print(f"Episode {i}, reward {episode_reward}, cost {episode_cost}, stored {stored}/{total}")
+        if save:
+            print(f"Buffer size: {len(learner.REPLAY_MEMORY)}")
         ep_rewards.append(episode_reward)
         ep_costs.append(episode_cost)
 
@@ -245,7 +174,7 @@ def main(EPISODES, learner=None, render=False, save=False, policy=human_policy):
 
     if save:
         learner.save("jointmodel")
-    return
+    return actions
 
 lidar_bins = 32
 
@@ -275,5 +204,12 @@ if __name__ == "__main__":
         'gremlins_keepout': 0.4,
     }
     env = Engine(config)
-    loaded_learner = pickle.load(open("jointmodel", "rb"))
-    main(EPISODES=200, learner=loaded_learner, render=True, policy=loaded_learner, save=False)
+    #loaded_learner = pickle.load(open("jointmodel", "rb"))
+    actions = main(EPISODES=10, render=True, policy=human_policy, save=False)
+    plt.figure()
+    actions = np.array(actions)
+    print(actions.shape)
+    plt.scatter(actions[:, 0], actions[:, 1])
+    plt.xlabel("Forward")
+    plt.ylabel("Rotation")
+    plt.show()

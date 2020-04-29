@@ -5,59 +5,84 @@ os.environ['KMP_DUPLICATE_LIB_OK']='True'
 import tensorflow as tf
 from keras.layers import Dropout, Activation, Dense, Input
 from keras.models import Model, load_model
+from keras.optimizers import Adam
+from keras.utils.vis_utils import plot_model
 from keras.regularizers import l2
 from keras.optimizers import Adam
 import numpy as np
 import pickle
 
 
-def create_model(input_size, output_size, output_activation="tanh", dr=0.0, l2_penalty=0.0):
-    l1_dims, l2_dims, l3_dims = 500, 500, 500
+def create_model(input_size,
+                 output_size,
+                 layers=2,
+                 neurons=500,
+                 output_activation="linear",
+                 dr=0.0,
+                 l2_penalty=0.0,
+                 lr=0.001):
+
     input_layer = Input(shape=(input_size,))
-    dense1 = Dense(l1_dims, kernel_regularizer=l2(l2_penalty), bias_regularizer=l2(l2_penalty), activation="relu")(input_layer)
-    dropout1 = Dropout(dr)(dense1, training=True)
-    dense2 = Dense(l2_dims, kernel_regularizer=l2(l2_penalty), bias_regularizer=l2(l2_penalty), activation="relu")(dropout1)
-    dropout2 = Dropout(dr)(dense2, training=True)
-    dense3 = Dense(l3_dims, kernel_regularizer=l2(l2_penalty), bias_regularizer=l2(l2_penalty), activation="relu")(dropout2)
-    dropout3 = Dropout(dr)(dense3, training=True)
-    output_layer = Dense(output_size, activation=output_activation)(dropout3)
+    current_layer = input_layer
+    for i in range(layers):
+        dense_layer = Dense(neurons, kernel_regularizer=l2(l2_penalty),
+                       bias_regularizer=l2(l2_penalty),
+                       activation="relu")(current_layer)
+        dropout_layer = Dropout(dr)(dense_layer, training=True)
+        current_layer = dropout_layer
+    output_layer = Dense(output_size, activation=output_activation)(current_layer)
     model_nn = Model(input=[input_layer], output=[output_layer])
-    model_nn.compile(optimizer="adam", loss="mse", metrics=['accuracy'])
+    optimizer = Adam(learning_rate=lr)
+    model_nn.compile(optimizer=optimizer, loss="mse", metrics=['accuracy'])
+    #plot_model(model_nn, to_file='model_plot.png', show_shapes=True, show_layer_names=True)
     return model_nn
 
 
 class NNModel:
-    def __init__(self, input_size, output_size, output_activation="tanh"):
-        self.nn = create_model(input_size, output_size, output_activation)
+    def __init__(self, input_size,
+                 output_size,
+                 output_activation="linear",
+                 data_stats=[0,1,0,1]):
+        self.nn = create_model(input_size,
+                               output_size)
+        self.input_mean, self.input_std, self.output_mean, self.output_std = data_stats
 
-    def train(self, x, y, batch_size=32):
-        self.nn.fit(x=x, y=y, batch_size=batch_size, verbose=0, shuffle=False)
+    def train(self, x, y, batch_size=512):
+        normalised_x = (x - self.input_mean)/self.input_std
+        normalised_y = (y-self.output_mean)/self.output_std
+        #gaussian_noise = np.random.multivariate_normal(0, 0.001)
+        #noisy_x = normalised_x + gaussian_noise
+        self.nn.fit(x=normalised_x, y=normalised_y, batch_size=batch_size, verbose=1, shuffle=True)
         return
 
     def predict(self, x):
-        return self.nn.predict(x=x)
+        normalised_input = (x-self.input_mean)/self.input_std
+        normalised_output = self.nn.predict(x=normalised_input)
+        y_out = normalised_output*self.output_std + self.output_mean
+        return y_out
 
-    def save(self):
-        pickle.dump(self, open("model2", "wb"))
+    def save(self, name):
+        pickle.dump(self, open(name, "wb"))
 
 
 def main(EPOCHS):
-    state_action_buffer = pickle.load(open(f"policy_data/state_action_buffer", "rb"))
-    #delta_state_buffer = pickle.load(open(f"policy_data/delta_state_buffer", "rb"))
-    states = state_action_buffer[:, :39]
-    actions = state_action_buffer[:, 39:]
-    input_size = states.shape[1]
-    output_size = actions.shape[1]
-    print(states.shape)
-    print(actions.shape)
-    nn_policy = NNModel(input_size, output_size)
-    nn_policy.train(states, actions, EPOCHS)
-    nn_policy.save()
+    input_size, output_size = 12, 10
+    state_action_buffer = pickle.load(open("model_data", "rb"))
+    state_actions = state_action_buffer[:-1]
+    next_states = state_action_buffer[1:, :10]
+    delta_states = next_states - state_actions[:, :10]
+    mu_in, std_in = np.mean(state_actions, axis=0), np.std(state_actions, axis=0)
+    mu_out, std_out = np.mean(delta_states, axis=0), np.std(delta_states, axis=0)
+    data_stats = mu_in, std_in, mu_out, std_out
+    nn_policy = NNModel(input_size, output_size, data_stats=data_stats)
+    nn_policy.train(state_actions, delta_states, EPOCHS)
+    nn_policy.save("new_model")
     return
 
 
 
 if __name__ == "__main__":
-    main(4)
-    #main2()
+    main(2)
+    new_nn = pickle.load(open("new_model","rb"))
+    state_action_buffer = pickle.load(open("model_data", "rb"))
 

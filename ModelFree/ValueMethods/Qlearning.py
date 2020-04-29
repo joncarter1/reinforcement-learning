@@ -13,6 +13,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 env = gym.make('MountainCar-v0')
+env = gym.wrappers.Monitor(env, './video/', video_callable=lambda episode_id: True,force = True)
 
 step_size = 40
 l = 0.1
@@ -110,3 +111,6 @@ env.close()
 plt.figure(2)
 plt.plot(q1s)
 plt.plot(q2s)
+
+if __name__ == "__main__":
+    print("hey")
