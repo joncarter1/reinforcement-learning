@@ -369,4 +369,4 @@ if __name__ == "__main__":
         for seed in seeds:
             env.seed(seed)  # 18 good
             np.random.seed(100)
-            main(EPISODES=1, mpc_learner=loaded_learner, render=True, policy=human_policy, save_name=None)
+            main(EPISODES=1, mpc_learner=loaded_learner, render=False, policy=human_policy, save_name=None)
