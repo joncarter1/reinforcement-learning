@@ -76,7 +76,7 @@ if __name__ == "__main__":
     opt_seq = np.array(pickle.load(open("Trajectories/action_sequence2", "rb")))
     base_seq = np.array(pickle.load(open("Trajectories/base_action_sequence", "rb")))
     print(opt_seq[:, 0].shape)
-    #print(base_seq[:,0].shape)
+    print(base_seq[:,0].shape)
     fig, axes = plt.subplots(2,1)
     ax = axes[0]
     ax.plot(base_seq[:, 0], color="red")

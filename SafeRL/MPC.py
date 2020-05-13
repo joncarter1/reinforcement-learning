@@ -28,14 +28,14 @@ def ensure_dir(directory):
 
 
 class MPCLearner:
-    def __init__(self):
+    def __init__(self, state_dims=10, action_dims=2):
         self.MEMORY_SIZE = 100000
         self.MIN_REPLAY_MEMORY_SIZE = 10000  # Minimum number of steps in a memory to start training
         self.REPLAY_MEMORY = deque(maxlen=self.MEMORY_SIZE)
         self.MINIBATCH_SIZE = 512
         self.state_dims = 10
-        self.hazard_dims = 32
-        self.action_dims = 2
+        self.hazard_dims = state_dims
+        self.action_dims = action_dims
         self.combined_dims = self.state_dims + self.action_dims
         self.policy_dims = self.state_dims + self.hazard_dims
         self.neurons = 500
@@ -51,10 +51,7 @@ class MPCLearner:
                                            l2_penalty=l2_penalty)
         self.input_mean, self.input_std, self.output_mean, self.output_std = [0, 1, 0, 1]
         self.normalised = False
-
-    def __call__(self, robot_state, hazard_vector):
-        input_vector = np.expand_dims(np.hstack((robot_state, hazard_vector)), axis=1).T
-        return np.squeeze(self.policy.predict(input_vector))
+        self.safety_threshold = 3
 
     def model_prediction(self, robot_state, action):
         state_action = np.expand_dims(np.hstack((robot_state, action)), axis=1).T
@@ -62,11 +59,10 @@ class MPCLearner:
         normalised_output = self.dynamics_model.predict(normalised_input)
         return normalised_output * self.output_std + self.output_mean
 
-    def compute_trajectories(self, initial_robot_state, goal_pos, hazards, policy):
+    def compute_trajectories(self, initial_robot_state, goal_pos, hazard_vector, policy):
         trajectory_length = 40   # MPC Horizon length
         no_trajectories = 100
 
-        hazard_vector = np.array(hazards)[:, :2]
         trajectory_costs = np.zeros(no_trajectories)
         trajectory_values = np.zeros(no_trajectories)
 
@@ -84,27 +80,30 @@ class MPCLearner:
             delta_state = np.squeeze(self.model_prediction(current_robot_state, next_action))
             r_1 = deepcopy(current_robot_state[2])
             current_robot_state = old_robot_state + delta_state
-            policy_cost += compute_cost(current_robot_state, goal_pos, hazard_vector)
+            policy_cost = max(policy_cost, compute_cost(current_robot_state, goal_pos, hazard_vector))
             policy_reward += discount*compute_value(current_robot_state, old_robot_state)
             discount *= gamma
             old_robot_state = current_robot_state
 
         policy_actions = np.array(policy_actions).reshape(1, trajectory_length, self.action_dims)
 
-        sigmas = np.squeeze(np.clip(np.std(policy_actions, axis=1), 0.1, None))
+        sigmas = np.squeeze(np.clip(np.std(policy_actions, axis=1), 1e-2, None))
+
         deltas = np.sum(np.abs(policy_actions[:, 1:, :]-policy_actions[:, :-1, :]), axis=1)
         length_scales = np.clip(np.squeeze(trajectory_length/(deltas/sigmas)), 0.01, trajectory_length)
         action_sequences = np.repeat(policy_actions, no_trajectories, axis=0) #.reshape(trajectory_length, no_trajectories, self.action_dims)
 
-        correlated_noise = add_correlated_noise(0.1*sigmas, 2*length_scales)
+        correlated_noise = add_correlated_noise(sigmas, 2*length_scales)
         mpc_action_sequences = np.clip(action_sequences + correlated_noise, -1, 1)
-        dim = 1
+        """dim = 0
+
         plt.figure()
         plt.plot(policy_actions[0, :, dim], label="Policy")
         plt.plot(mpc_action_sequences[6, :, dim], label="Exploration")
         plt.legend()
+        plt.ylim(-1,1)
         plt.show()
-        raise ValueError
+        raise ValueError"""
         current_states = np.repeat(initial_robot_state.reshape(1, self.state_dims), no_trajectories, axis=0)
         old_robot_states = current_states
         discount = 1
@@ -113,7 +112,6 @@ class MPCLearner:
             normalised_inputs = (state_actions - self.input_mean) / self.input_std
             normalised_outputs = self.dynamics_model.predict(normalised_inputs)
             delta_states = normalised_outputs*self.output_std + self.output_mean
-            r_1 = deepcopy(current_states[:, 2])
             current_states = old_robot_states + delta_states
             state_costs = np.apply_along_axis(compute_cost, 1, current_states, goal_pos, hazard_vector)
             state_values = compute_values(current_states, old_robot_states)
@@ -122,19 +120,26 @@ class MPCLearner:
             discount *= gamma
             old_robot_states = current_states
 
-        safety_threshold = 0.3
-        bad_trajectories = np.where(trajectory_costs > safety_threshold)
+        bad_trajectories = np.where(trajectory_costs > policy_cost)
         trajectory_values[bad_trajectories] = -np.inf
         best_trajectory = np.argmax(trajectory_values)
-
+        print(f"Policy cost: {policy_cost}")
         if policy_reward > trajectory_values[best_trajectory]:
-            print("Shit")
-            action = action_sequences[0, 0]
+            print("Overridden")
+            return action_sequences[0, 0], 0
         else:
-            print("Best: ", best_trajectory)
-            action = mpc_action_sequences[best_trajectory, 0]
+            print("Best: ", best_trajectory, trajectory_values[best_trajectory], trajectory_costs[best_trajectory])
 
-        return action
+            if random.random() > 1:
+                plt.figure()
+                fig, axes = plt.subplots(2, 1)
+                for i in range(2):
+                    axes[i].plot(policy_actions[0, :, i], label="OG")
+                    axes[i].plot(mpc_action_sequences[best_trajectory, :, i], label="Best")
+                plt.legend()
+                plt.show()
+                raise ValueError
+            return mpc_action_sequences[best_trajectory, 0], 1
 
     def normalise_buffer(self):
         buffer_array = np.array(self.REPLAY_MEMORY)
@@ -203,18 +208,21 @@ class MPCLearner:
         pickle.dump(self, open(model_name, "wb"))
 
 
-def add_correlated_noise(sigmas=[0.1], lengthscales=[0.1], trajectory_length=40, no_trajectories=100):
+def add_correlated_noise(sigmas=[0.1], lengthscales=[0.1], trajectory_length=40, no_trajectories=100, uniform=True):
     """Add exploration noise to action sequences of each dimension."""
     mean = trajectory_length * [0]
     array_inds = np.arange(0, trajectory_length).reshape(trajectory_length, 1)
     correlations = []
     for (sigma, lengthscale) in zip(sigmas, lengthscales):
-        cov_matrix = sigma * np.exp(-((array_inds.T - array_inds) / lengthscale) ** 2)
-        correlated_noise = np.random.multivariate_normal(mean, cov_matrix, size=no_trajectories)
+        if uniform:
+            correlated_noise = np.random.uniform(-sigma, sigma, size=(no_trajectories, trajectory_length))
+        else:
+            cov_matrix = (sigma ** 2) * np.exp(-((array_inds.T - array_inds) / lengthscale) ** 2)
+            correlated_noise = np.random.multivariate_normal(mean, cov_matrix, size=no_trajectories)
         correlations.append(correlated_noise)
-    #correlated_noise = np.moveaxis(correlated_noise, 0, -1)  # Re-shape to (trajectories, dims, traj. length)
+
     correlations = np.moveaxis(np.array(correlations), 0, -1)
-    #print(correlations.shape)
+    print(correlations.shape)
     return correlations
 
 
@@ -222,7 +230,7 @@ def compute_cost(robot_state, goal_pos, hazards):
     sigma = 0.3
     displacements = hazards - (robot_state[:2]+goal_pos)
     distances = np.einsum('ij,ji->i', displacements, displacements.T)
-    return np.max(np.exp(-distances / (sigma ** 2)))
+    return np.max(np.exp(-(distances / sigma)**2))
 
 
 def compute_value(robot_state, old_robot_state):
@@ -259,6 +267,7 @@ def main(EPISODES, mpc_learner=None, render=False, save_name=None, policy=human_
     #action_sequence = []
 
     for i in tqdm(range(EPISODES)):
+        no_accepted = 0
         stored, total, episode_reward, episode_cost = 0, 0, 0, 0
         env_state = env.reset()
         position = env.robot_pos[:2] - env.goal_pos[:2]
@@ -267,20 +276,24 @@ def main(EPISODES, mpc_learner=None, render=False, save_name=None, policy=human_
             env.render()
         done = False
         while not done:
-            """if np.random.random() < 0.2:
-                action = np.random.uniform(-1, 1, size=(2,))
-            else:
-                hazards = env.gremlins_obj_pos + env.hazards_pos
-                action = policy(robot_state, env.goal_pos[:2], np.array(hazards)[:, :2]).reshape(2,)"""
+            regular = False
             hazards = env.gremlins_obj_pos + env.hazards_pos
+            hazard_vector = np.array(hazards)[:, :2]
             goal_pos = env.goal_pos[:2]
-            action = mpc_learner.compute_trajectories(robot_state, goal_pos, hazards, policy)
-            #action_sequence.append(action)
+            if regular:
+                if np.random.random() < 0:
+                    action = np.random.uniform(-1, 1, size=(2,))
+                else:
+                    action = policy(robot_state, env.goal_pos[:2], hazard_vector).reshape(2,)
+            else:
+                action, accepted = mpc_learner.compute_trajectories(robot_state, goal_pos, hazard_vector, policy)
+                no_accepted += accepted
             new_env_state, reward, done, info = env.step(action)
             episode_reward += reward
             episode_cost += info["cost"]
             new_position = env.robot_pos[:2] - env.goal_pos[:2]
             new_robot_state = form_state(new_env_state, new_position)
+            print(f"State cost : {compute_cost(robot_state, goal_pos, hazard_vector  )}")
             if save_name:
                 stored += 1
                 mpc_learner.store_transition(robot_state, action, new_robot_state)
@@ -292,7 +305,7 @@ def main(EPISODES, mpc_learner=None, render=False, save_name=None, policy=human_
             if render:
                 env.render()
 
-        print(f"Episode {i}, reward {episode_reward}, cost {episode_cost}, stored {stored}/{total}")
+        print(f"Episode {i}, reward {episode_reward}, cost {episode_cost}, stored {stored}/{total}, accepted {no_accepted}/{total}")
         print(f"Buffer length: {len(mpc_learner.REPLAY_MEMORY)}")
         if save_name and i != 0 and not i % (EPISODES // 5):
             save_results(mpc_learner.REPLAY_MEMORY)
@@ -332,8 +345,7 @@ if __name__ == "__main__":
         'gremlins_keepout': 0.4,
     }
     env = Engine(config)
-    env.seed(1008)  # 18 good
-    np.random.seed(100)
+
     training = False
     if training:
         ll = pickle.load(open("mpcmodel2", "rb"))
@@ -352,4 +364,9 @@ if __name__ == "__main__":
         #main(EPISODES=50, mpc_learner=ll, render=False, policy=human_policy, save=True)
     else:
         loaded_learner = pickle.load(open("mpcmodel", "rb"))
-        main(EPISODES=1, mpc_learner=loaded_learner, render=True, policy=safe_policy, save_name=None)
+        loaded_learner.safety_threshold = 0.8
+        seeds = [18, 19, 20, 21, 22]
+        for seed in seeds:
+            env.seed(seed)  # 18 good
+            np.random.seed(100)
+            main(EPISODES=1, mpc_learner=loaded_learner, render=True, policy=human_policy, save_name=None)

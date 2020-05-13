@@ -38,11 +38,7 @@ def main(EPISODES, mpc_learner=None, render=False, save=False, policy=human_poli
 
             #action = np.random.random(size=(2,)) - 0.5
             print(env_state["goal_dist"])
-            for i in range(10):
-                traj_state = trajectories[i][-1]
-                new_traj_state = traj_state + mpc_learner.model_prediction(robot_state, action)
-                trajectories[i].append(np.squeeze(new_traj_state))
-            new_predicted_state = predicted_state + mpc_learner.model_prediction(robot_state, action)
+            new_predicted_state = np.squeeze(predicted_state + mpc_learner.model_prediction(predicted_state, action))
             new_env_state, reward, done, info = env.step(action)
             new_position = env.robot_pos[:2]-env.goal_pos[:2]
 
@@ -88,16 +84,17 @@ if __name__ == "__main__":
     env = Engine(config)
 
     loaded_learner = pickle.load(open("mpcmodel", "rb"))
+    print(len(loaded_learner.REPLAY_MEMORY))
     true_path, trajectory, trajectories = main(EPISODES=1, mpc_learner=loaded_learner, render=True, policy=human_policy, save=False)
 
-    max_steps = 1000
+    max_steps = 10000
     ind1, ind2 = 0, 1
     state_items = ["x", "y", "Dist", "cos", " sin"]
     plt.figure()
-    fig, axes = plt.subplots(2,5)
+    fig, axes = plt.subplots(5,2)
     for k in range(10):
-        i = k//5
-        j = k%5
+        i = k%5
+        j = k//5
         axes[i, j].plot(true_path[:max_steps, k], label="Truth")
         axes[i, j].plot(trajectory[:max_steps, k], label="Prediction")
         axes[i, j].set_xlabel("Timesteps")
@@ -107,10 +104,14 @@ if __name__ == "__main__":
     plt.figure()
     #plt.xlim(-4, 4)
     #plt.ylim(-4, 4)
-    plt.scatter(true_path[:max_steps, ind1], true_path[:max_steps, ind2], marker="x", s=5, label="Truth")
-    for i in range(10):
-        plt.scatter(trajectories[i][:max_steps, ind1], trajectories[i][:max_steps, ind2], color="red", marker="x", s=1, label="Prediction")
-    x = 50
-    plt.scatter(true_path[x, ind1], true_path[x, ind2], marker="x", s=25, label=f"Step {x}")
+    plt.scatter(true_path[:max_steps, ind1], true_path[:max_steps, ind2], marker=".", s=15, label="Ground truth")
+    plt.scatter(trajectory[:max_steps, ind1], trajectory[:max_steps, ind2], color="red", marker=".", s=15, label="Model prediction")
+
+    T_steps = [0.5, 1, 2]
+    for t in T_steps:
+        x = int(50*t)
+        plt.scatter(true_path[x, ind1], true_path[x, ind2], marker="x", s=50, label=f"T = {t}s")
+    plt.xlabel("x", fontsize=16)
+    plt.ylabel("y", fontsize=16)
     plt.legend()
     plt.show()
