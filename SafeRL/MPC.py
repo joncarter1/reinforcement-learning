@@ -123,12 +123,12 @@ class MPCLearner:
         bad_trajectories = np.where(trajectory_costs > policy_cost)
         trajectory_values[bad_trajectories] = -np.inf
         best_trajectory = np.argmax(trajectory_values)
-        print(f"Policy cost: {policy_cost}")
+        #print(f"Policy cost: {policy_cost}")
         if policy_reward > trajectory_values[best_trajectory]:
-            print("Overridden")
+            #print("Overridden")
             return action_sequences[0, 0], 0
         else:
-            print("Best: ", best_trajectory, trajectory_values[best_trajectory], trajectory_costs[best_trajectory])
+            #print("Best: ", best_trajectory, trajectory_values[best_trajectory], trajectory_costs[best_trajectory])
 
             if random.random() > 1:
                 plt.figure()
@@ -222,7 +222,7 @@ def add_correlated_noise(sigmas=[0.1], lengthscales=[0.1], trajectory_length=40,
         correlations.append(correlated_noise)
 
     correlations = np.moveaxis(np.array(correlations), 0, -1)
-    print(correlations.shape)
+    #print(correlations.shape)
     return correlations
 
 
@@ -293,7 +293,7 @@ def main(EPISODES, mpc_learner=None, render=False, save_name=None, policy=human_
             episode_cost += info["cost"]
             new_position = env.robot_pos[:2] - env.goal_pos[:2]
             new_robot_state = form_state(new_env_state, new_position)
-            print(f"State cost : {compute_cost(robot_state, goal_pos, hazard_vector  )}")
+            #print(f"State cost : {compute_cost(robot_state, goal_pos, hazard_vector  )}")
             if save_name:
                 stored += 1
                 mpc_learner.store_transition(robot_state, action, new_robot_state)
