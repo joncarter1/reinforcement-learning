@@ -4,3 +4,6 @@
 [submodule "safety-starter-agents"]
 	path = safety-starter-agents
 	url = git@github.com:joncarter1/safety-starter-agents.git
+[submodule "handful-of-trials"]
+	path = handful-of-trials
+	url = git@github.com:joncarter1/handful-of-trials.git

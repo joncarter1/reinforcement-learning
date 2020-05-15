@@ -8,14 +8,16 @@ from keras.models import Model, load_model
 from keras.optimizers import Adam
 from keras.utils.vis_utils import plot_model
 from keras.regularizers import l2
+from keras.callbacks import EarlyStopping
 from keras.optimizers import Adam
 import numpy as np
 import pickle
 import random
 import tensorflow as tf
-
 import keras.backend as K
 import numpy as np
+
+early_stopping = EarlyStopping(monitor='val_loss', patience=1)
 
 def gaussian_nll(ytrue, ypreds):
     """
@@ -72,9 +74,9 @@ def create_model(input_size,
 
     current_layer = input_layer
     for i in range(layers):
-        dense_layer = Dense(neurons, kernel_regularizer=l2(l2_penalty),
-                       bias_regularizer=l2(l2_penalty),
-                       activation="relu")(current_layer)
+        dense_layer = Dense(neurons, kernel_initializer='random_normal', bias_initializer='zeros',
+                            kernel_regularizer=l2(l2_penalty), bias_regularizer=l2(l2_penalty),
+                            activation="relu")(current_layer)
         current_layer = Dropout(dr)(dense_layer, training=True) if dr else dense_layer
     output_layer = Dense(output_size, activation=output_activation)(current_layer)
     model_nn = Model(input=[input_layer], output=[output_layer])
@@ -110,7 +112,7 @@ class NNModel:
         #noisy_x = normalised_x + np.random.normal(0, 1e-3, size=x.shape)
         #noisy_y = normalised_y + np.random.normal(0, 1e-3, size=y.shape)
         self.nns[b_i].fit(x=normalised_x, y=normalised_y, batch_size=batch_size, verbose=verbose,
-                          epochs=epochs, validation_split=validation_split, shuffle=shuffle)
+                          epochs=epochs, validation_split=validation_split, shuffle=shuffle, callbacks=[early_stopping])
         return
 
     def predict(self, x, b_i=1):

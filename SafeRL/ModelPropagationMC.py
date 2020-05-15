@@ -21,7 +21,7 @@ def main(EPISODES=1, mpc_learner=None, no_particles=20, render=True, save=False)
     if mpc_learner is None:
         mpc_learner = MPCLearner2()
 
-    for i in tqdm(range(EPISODES)):
+    for _ in tqdm(range(EPISODES)):
         state = env.reset()
         predicted_states = np.repeat(state.reshape(1, mpc_learner.state_dims), no_particles, axis=0)
         prediction_sigmas = np.zeros(shape=predicted_states.shape)
@@ -36,11 +36,11 @@ def main(EPISODES=1, mpc_learner=None, no_particles=20, render=True, save=False)
 
         while not done:
             action = np.random.uniform(-1, 1, size=(1,))
-            #action = np.array([1]) if ((i//50)%2) else np.array([-1])
             i += 1
-
+            #print(f"States at {i}")
             for p_i, predicted_state in enumerate(predicted_states):
-                b_i = p_i #//5  #np.random.randint(0, 5)
+                #print(predicted_state)
+                b_i = p_i #np.random.randint(0, 5)  # Randomly select bootstrap
                 model_output = mpc_learner.model_prediction(predicted_state, action, b_i)
                 if mpc_learner.probabilistic:
                     mean, sigma = model_output
@@ -55,6 +55,8 @@ def main(EPISODES=1, mpc_learner=None, no_particles=20, render=True, save=False)
                     print(mean, cov, predicted_state)
                     raise e
                 predicted_states[p_i] = new_predicted_state
+
+            #predicted_states = np.random.multivariate_normal(np.mean(predicted_states, axis=0), np.cov(predicted_states.T), size=5)
 
             state, reward, done, info = env.step(action)
             true_path.append(deepcopy(state))
@@ -76,7 +78,8 @@ def soft(x):
 
 if __name__ == "__main__":
     env = gym.make("MountainCarContinuous-v0")
-    loaded_learner = pickle.load(open("MountainCarPE", "rb"))
+    loaded_learner = pickle.load(open("MountainCarDE", "rb"))
+
     no_particles = 5
     true_path, trajectories, trajectory_sigmas = main(EPISODES=1, mpc_learner=loaded_learner, no_particles=no_particles,
                                                          render=False, save=False)
@@ -85,13 +88,12 @@ if __name__ == "__main__":
     std_vector = np.std(trajectories, axis=1)
     max_vector = np.max(trajectories, axis=1)
     min_vector = np.min(trajectories, axis=1)
-
-    max_steps = 200
+    max_steps = 800
     plt.ion()
     plt.figure()
     fig, axes = plt.subplots(2, 1)
     for k in range(2):
-        axes[k].plot(true_path[:, k], label="Truth")
+        axes[k].plot(true_path[:, k], color="tab:green", label="Truth")
         axes[k].fill_between(np.arange(0, data_length), true_path[:, k], true_path[:, k], alpha=0.5)
         axes[k].set_xlim(0, max_steps)
         axes[k].set_ylim(np.min(true_path[:, k])-0.5*np.abs(np.min(true_path[:, k])), np.max(true_path[:, k])+0.5*np.abs(np.max(true_path[:, k])))
@@ -99,12 +101,16 @@ if __name__ == "__main__":
         #std_lower = mean_vector[:, k] - 3*std_vector[:, k]
         #std_upper = mean_vector[:, k] + 3*std_vector[:, k]
         #axes[k].fill_between(np.arange(0, data_length), min_vector[:, k], max_vector[:, k], color="tab:red", alpha=0.5)
-        for p_i in range(5):
-            axes[k].plot(trajectories[:, p_i, k])
-            std_vector = trajectory_sigmas[:, p_i, k]
+        axes[k].plot(mean_vector[:, k], color="tab:blue", label="Mean")
+        std_lower = mean_vector[:, k] - 3*std_vector[:, k]
+        std_upper = mean_vector[:, k] + 3*std_vector[:, k]
+        axes[k].fill_between(np.arange(0, data_length), std_lower, std_upper, color="tab:blue", alpha=0.5)
+        for p_i in range(no_particles):
+            axes[k].plot(trajectories[:, p_i, k], "--", linewidth=0.3, color="red", alpha=0.7)
+            #std_vector = trajectory_sigmas[:, p_i, k]
             #print(std_vector)
-            std_lower = trajectories[:, p_i, k] - std_vector
-            std_upper = trajectories[:, p_i, k] + std_vector
-            axes[k].fill_between(np.arange(0, data_length), std_lower, std_upper, alpha=0.5)
+            #std_lower = trajectories[:, p_i, k] - std_vector
+            #std_upper = trajectories[:, p_i, k] + std_vector
+            axes[k].fill_between(np.arange(0, data_length), 0, 0, alpha=0.5)
     plt.legend()
     plt.show()

@@ -6,6 +6,7 @@ import pickle
 from copy import deepcopy
 from collections import deque
 import random
+from keras.utils.vis_utils import plot_model
 from SafeRL.ModelLearning import gaussian_nll
 from keras.utils.generic_utils import get_custom_objects
 
@@ -19,7 +20,7 @@ def zero_func(x):
 class MPCLearner2:
     def __init__(self, state_dims=10, action_dims=2, probabilistic=True, reward_func=None, cost_func=None, final_cost=None, value_func=None):
         self.MEMORY_SIZE = 100000
-        self.MIN_REPLAY_MEMORY_SIZE = 10000  # Minimum number of steps in a memory to start training
+        self.MIN_REPLAY_MEMORY_SIZE = 100  # Minimum number of steps in a memory to start training
         self.REPLAY_MEMORY = deque(maxlen=self.MEMORY_SIZE)
         self.MINIBATCH_SIZE = 512
         self.state_dims = state_dims
@@ -31,7 +32,7 @@ class MPCLearner2:
         self.B = 5
         self.bootstrap_data_inds = [[] for _ in range(self.B)]  # Track samples used by each bootstrap NN
         dropout = 0
-        l2_penalty = 0
+        l2_penalty = 1e-3
         self.probabilistic = probabilistic
         self.dynamics_model = NNModel(input_size=self.combined_dims,
                                        output_size=self.state_dims,
@@ -77,7 +78,6 @@ class MPCLearner2:
             return normalised_output * self.output_std + self.output_mean
 
     def normalise_buffer(self):
-        return
         print("Normalising buffer for training")
         buffer_array = np.array(self.REPLAY_MEMORY)
         self.input_mean = np.mean(buffer_array[:, :self.combined_dims], axis=0)
@@ -96,7 +96,7 @@ class MPCLearner2:
         normalised_delta_state = (delta_state - self.output_mean) / self.output_std
         stacked_transition = np.squeeze(np.hstack((normalised_state_action, normalised_delta_state)))
         self.REPLAY_MEMORY.append(stacked_transition)
-        bootstrap_inds = np.random.binomial(1, 1, 5)
+        bootstrap_inds = np.random.binomial(1, 0.3, 5)
         new_index = len(self.REPLAY_MEMORY) - 1
         for b_i in range(self.B):
             if bootstrap_inds[b_i] == 1:
@@ -113,7 +113,8 @@ class MPCLearner2:
 
         for b_i in range(self.dynamics_model.B):
             """Train each bootstrapped neural network"""
-            data_sample = np.array(self.REPLAY_MEMORY)[self.bootstrap_data_inds[b_i]]
+            #data_sample = np.array(self.REPLAY_MEMORY)[self.bootstrap_data_inds[b_i]]
+            data_sample = np.array(random.sample(self.REPLAY_MEMORY, int(0.5*len(self.REPLAY_MEMORY))))
             state_action_vector = data_sample[:, :self.combined_dims]
             delta_state_vector = data_sample[:, -self.state_dims:]
 
@@ -159,13 +160,19 @@ if __name__ == "__main__":
     nn_policy = NNPolicy(2, 1)
     load = False
     if load:
-        mpc_learner = pickle.load(open("MountainCarPE", "rb"))
+        mpc_learner = pickle.load(open("MountainCarDE", "rb"))
     else:
         mpc_learner = MPCLearner2(2, 1, False)
 
+    """print("NN1")
+    print(mpc_learner.dynamics_model.nns[0].get_weights())
+    plot_model(mpc_learner.dynamics_model.nns[0], to_file='model_plot.png', show_shapes=True, show_layer_names=True)
+    print("NN12")
+    print(mpc_learner.dynamics_model.nns[1].get_weights())
+    raise ValueError"""
     render = False
 
-    for i in range(11):
+    for i in range(10):
         state = env.reset()
         done = False
         if render:
@@ -182,13 +189,9 @@ if __name__ == "__main__":
             state = new_state
         print(f"Episode {i}")
 
-    mpc_learner.train_model(10)
-    print(f"min sigmas {mpc_learner.min_sigmas}")
-    print(f"max sigmas {mpc_learner.max_sigmas}")
+    mpc_learner.train_model(3)
 
-    mpc_learner.save("MountainCarPE")
-    print(mpc_learner.input_std)
-    print(mpc_learner.output_std)
+    mpc_learner.save("MountainCarDE")
     print("done")
 
 
