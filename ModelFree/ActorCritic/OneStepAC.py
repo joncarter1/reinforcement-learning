@@ -217,5 +217,5 @@ def main(EPISODES=3000, LOAD_MODEL=None, save_name=None,  normalise=False, gamma
 if __name__ == "__main__":
     normalise, gamma = False, 0.97
     load_model, save_model = "AC99", None
-    load_model, save_model = None, "AC99"
-    main(11, load_model, save_model, normalise=normalise, gamma=gamma)
+    load_model, save_model = None, "AC97"
+    main(1500, load_model, save_model, normalise=normalise, gamma=gamma)
