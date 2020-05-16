@@ -48,9 +48,9 @@ class PolicyEstimator:
 
         if name:
             subdir_name = "/".join([self.env_name, name])
-            self.scores = pickle.load(open(f"{subdir_name}/scores.p","rb"))
-            self.policy_nn.load_weights(f"{subdir_name}/PolicyNN-weights.h5")
-            self.predict_nn.load_weights(f"{subdir_name}/PredictNN-weights.h5")
+            self.scores = pickle.load(open("{}/scores.p","rb".format(subdir_name)))
+            self.policy_nn.load_weights("{}/PolicyNN-weights.h5".format(subdir_name))
+            self.predict_nn.load_weights("{}/PredictNN-weights.h5".format(subdir_name))
 
     def create_models(self):
         input = Input(shape=self.input_shape)
@@ -145,10 +145,10 @@ class PolicyEstimator:
             self.target_update_counter = 0
 
     def save_model(self, name):
-        self.policy_nn.save_weights(f"{name}/PolicyNN-weights.h5")
-        self.predict_nn.save_weights(f"{name}/PredictNN-weights.h5")
+        self.policy_nn.save_weights("{}/PolicyNN-weights.h5".format(name))
+        self.predict_nn.save_weights("{}/PredictNN-weights.h5".format(name))
         if self.value_nn:
-            self.value_nn.save_weights(f"{name}/ValueNN-weights.h5")
+            self.value_nn.save_weights("{}/ValueNN-weights.h5".format(name))
         return 'Saved model weights'
 
     def save_all(self, name):
@@ -159,11 +159,11 @@ class PolicyEstimator:
             os.makedirs(subdir_name)
         #pickle.dump(self.weights1, open(f"{subdir_name}/weights1.p", "wb"))
         #pickle.dump(self.weights2, open(f"{subdir_name}/weights2.p", "wb"))
-        pickle.dump(self.scores, open(f"{subdir_name}/scores.p", "wb"))
-        with open(f"{subdir_name}/specs.txt", "a") as text_file:
-            text_file.write(f"lr = {self.lr}\n")
-            text_file.write(f"gamma = {self.gamma}\n")
-            text_file.write(f"normalise = {self.normalise}\n")
+        pickle.dump(self.scores, open("{}/scores.p".format(subdir_name), "wb"))
+        with open("{}/specs.txt".format(subdir_name), "a") as text_file:
+            text_file.write("lr = {}\n".format(self.lr))
+            text_file.write("gamma = {}\n".format(self.gamma))
+            text_file.write("normalise = {}\n".format(self.normalise))
         self.save_model(subdir_name)
 
 
@@ -209,7 +209,7 @@ def main(EPISODES=3000, LOAD_MODEL=None, save_name=None,  normalise=False, gamma
         if not episode % 10:
             print(ep_time, "seconds of episode")
             print(training_time, "to train")
-            print(f"{score} score, mean score {np.mean(scores[-100:])}, {np.mean(steps[-100:])} mean no. steps")
+            print("{} score, mean score {}, {} mean no. steps".format(score, np.mean(scores[-100:]), np.mean(steps[-100:])))
     if save_name:
         agent.save_all(save_name)
 
@@ -218,4 +218,4 @@ if __name__ == "__main__":
     normalise, gamma = False, 0.97
     load_model, save_model = "AC99", None
     load_model, save_model = None, "AC99"
-    main(1500, load_model, save_model, normalise=normalise, gamma=gamma)
+    main(11, load_model, save_model, normalise=normalise, gamma=gamma)

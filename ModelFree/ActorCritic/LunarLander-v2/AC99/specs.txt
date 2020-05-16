@@ -31,3 +31,6 @@ normalise = False
 lr = 0.001
 gamma = 0.97
 normalise = False
+lr = 0.001
+gamma = 0.97
+normalise = False
