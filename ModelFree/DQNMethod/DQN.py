@@ -60,7 +60,7 @@ class DQNAgent:
     def update_replay_memory(self, transition):
         self.replay_memory.append(transition)
         
-    def train(self, terminal_state, step):
+    def train(self, terminal_state):
         if len(self.replay_memory) < self.MIN_REPLAY_MEMORY_SIZE:
             return
         
@@ -73,7 +73,7 @@ class DQNAgent:
         X = []
         y = []
         
-        for index, (current_state, action ,reward, new_current_state, done) in enumerate(minibatch):
+        for index, (current_state, action, reward, new_current_state, done) in enumerate(minibatch):
             if not done:
                 max_future_q = np.max(future_qs_list[index])
                 new_q = reward + self.gamma*max_future_q
@@ -173,7 +173,7 @@ def main(EPISODES, gamma, save_name=None, model_name=None, preview=False):
                 env.render()
 
             agent.update_replay_memory((current_state, action, reward, new_state, done))
-            agent.train(done, step)
+            agent.train(done)
 
             current_state = new_state
             step += 1

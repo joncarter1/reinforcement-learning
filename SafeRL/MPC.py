@@ -15,7 +15,7 @@ from collections import deque
 from ModelLearning import NNModel, create_model
 from Controller import human_policy, safe_policy
 import matplotlib.pyplot as plt
-
+from handful_of_trials.dmbrl.modeling.models import BNN
 """
 -ve rotation = clockwise torque
 i.e. theta defined in the polar sense.
@@ -377,9 +377,9 @@ if __name__ == "__main__":
         ll.save("mpcmodel2")
         #main(EPISODES=50, mpc_learner=ll, render=False, policy=human_policy, save=True)
     else:
-        loaded_learner = pickle.load(open("mpcmodel", "rb"))
+        loaded_learner = pickle.load(open("MPCModels/mpcmodel", "rb"))
         loaded_learner.safety_threshold = 0.8
-        seeds = range(25, 28)
+        seeds = range(28, 48)
         for seed in seeds:
             env.seed(seed)  # 18 good
             #np.random.seed(100)
