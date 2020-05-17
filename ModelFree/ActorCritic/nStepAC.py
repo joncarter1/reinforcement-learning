@@ -32,7 +32,7 @@ class PolicyEstimator:
         self.p2_dims = 50
         self.v1_dims = 250
         self.v2_dims = 250
-        self.lr = 1e-3
+        self.lr1, self.lr2 = 1e-3, 1e-3
         # Memory
         self.states, self.actions, self.rewards, self.next_states, self.g_ns = [], [], [], [], []
         self.REPLAY_MEMORY = deque(maxlen=10000)
@@ -66,15 +66,17 @@ class PolicyEstimator:
         v_dense2 = Dense(self.v2_dims, activation="relu")(v_dense1)
         v_out = Dense(1, activation="linear")(v_dense2)
         value_nn = Model(input=[input], output=[v_out])
+        #value_nn.compile(optimizer=Adam(lr=self.lr1), loss='mse')
         value_nn.compile(optimizer="rmsprop", loss='mse')
 
         def custom_loss(y_true, y_pred):
-            out = K.clip(y_pred, 1e-8, 1-1e-8)  # Numerical stability of log
+            out = K.clip(y_pred, 1e-12, 1-1e-12)  # Numerical stability of log
             ll = y_true*K.log(out)
             return K.sum(-ll*advantages)
 
         policy = Model(input=[input, advantages], output=[probs])
-        policy.compile(optimizer="rmsprop", loss=custom_loss) # Adam(lr=self.lr)
+        #policy.compile(optimizer=Adam(lr=self.lr2), loss=custom_loss)
+        policy.compile(optimizer="rmsprop", loss=custom_loss)
 
         predict = Model(input=[input], output=[probs])
 
@@ -104,8 +106,10 @@ class PolicyEstimator:
         action_memory = np.array(self.actions)
         reward_memory = np.array(self.rewards)
         next_state_memory = np.array(self.next_states)
-        discount_filter = np.flip(self.gamma ** np.arange(0, self.n_steps))
-        G_n = np.convolve(reward_memory, discount_filter)[-reward_memory.shape[0]:]  # n-step return before value fn.
+        discount_filter_n = np.flip(self.gamma ** np.arange(0, self.n_steps))
+        G_n = np.convolve(reward_memory, discount_filter_n)[-reward_memory.shape[0]:]  # n-step return before value fn.
+        discount_filter_inf = np.flip(self.gamma ** np.arange(0, reward_memory.shape[0]))
+        G_inf = np.convolve(reward_memory, discount_filter_inf)[-reward_memory.shape[0]:]  # Total discounted return
         # Append zeros for last n states, v(s_end) = 0
         state_vals = np.hstack((np.squeeze(self.value_nn.predict(state_memory[self.n_steps:])), np.zeros(self.n_steps)))
         G_n += (self.gamma**self.n_steps)*state_vals  # n-step value function added to give full n-step return
@@ -113,14 +117,12 @@ class PolicyEstimator:
         # One hot encoding of actions
         actions = np.zeros([len(action_memory), self.n_outputs])
         actions[np.arange(len(action_memory)), action_memory] = 1
-        end = np.ones_like(reward_memory)
-        end[-1] = 0
 
         # n step actor-critic td errors as in Sutton-Barto
         td_errors = G_n - np.squeeze(self.value_nn.predict(state_memory))
 
-        self.value_nn.train_on_batch(state_memory, G_n)
-        self.policy_nn.train_on_batch([state_memory, td_errors], actions)
+        self.value_nn.fit(state_memory, G_n, batch_size=int(len(state_memory)//10), shuffle=True, verbose=0)
+        self.policy_nn.fit([state_memory, td_errors], actions, batch_size=int(len(state_memory)//10), shuffle=True, verbose=0)
 
         self.clear_transitions()
         return
@@ -128,7 +130,7 @@ class PolicyEstimator:
     def update_stats(self, score):
         self.scores.append(score)
 
-    def train(self, terminal_state):
+    def train_value_fn(self, terminal_state):
         if len(self.REPLAY_MEMORY) < self.MIN_REPLAY_MEMORY_SIZE:
             return
 
@@ -168,7 +170,7 @@ class PolicyEstimator:
         #pickle.dump(self.weights2, open(f"{subdir_name}/weights2.p", "wb"))
         pickle.dump(self.scores, open("{}/scores.p".format(subdir_name), "wb"))
         with open("{}/specs.txt".format(subdir_name), "a") as text_file:
-            text_file.write("lr = {}\n".format(self.lr))
+            #text_file.write("lr = {}\n".format(self.lr))
             text_file.write("gamma = {}\n".format(self.gamma))
             text_file.write("n_steps = {}\n".format(self.n_steps))
         self.save_model(subdir_name)
@@ -214,7 +216,8 @@ def main(EPISODES=3000, LOAD_MODEL=None, save_name=None,  n_steps=5, gamma=0.99,
         start = timer()
         agent.learn()
         training_time = timer() - start
-
+        if score > 200:
+            print("Solved on episode {}".format(episode))
         if not episode % 10:
             print(ep_time, "seconds of episode")
             print(training_time, "to train")
@@ -227,4 +230,4 @@ if __name__ == "__main__":
     n_steps, gamma = 10, 0.99
     load_model, save_model = "AC99", None
     load_model, save_model = None, "AC-10-99"
-    main(2000, load_model, save_model, n_steps=n_steps, gamma=gamma)
+    main(1000, load_model, save_model, n_steps=n_steps, gamma=gamma)

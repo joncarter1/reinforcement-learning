@@ -13,9 +13,8 @@ import os
 from copy import deepcopy
 from collections import deque
 from ModelLearning import NNModel, create_model
-from Controller import human_policy, safe_policy
+from Controller import human_policy, safe_policy, config
 import matplotlib.pyplot as plt
-from handful_of_trials.dmbrl.modeling.models import BNN
 """
 -ve rotation = clockwise torque
 i.e. theta defined in the polar sense.
@@ -26,29 +25,48 @@ def ensure_dir(directory):
     if not os.path.exists(directory):
         os.makedirs(directory)
 
+def preprocess_env_state(robot_position, env_state_dict):
+    """Pre process the environment state dictionary and robot position."""
+    modified_state_dict = deepcopy(env_state_dict)
+    for key in ["magnetometer"]:
+        del modified_state_dict[key]  # Useless state measurement.
+    modified_state_dict["gyro"] = modified_state_dict["gyro"][2]  # Just keep k value
+    for key in ["accelerometer", "velocimeter"]:
+        modified_state_dict[key] = modified_state_dict[key][:2]  # Remove z axis value
+    stacked_env_state = np.hstack(list(modified_state_dict.values()))
+    return np.hstack((robot_position, stacked_env_state))
+
+
+def preprocess_state2(robot_state, hazard_vector):
+    """Pre process state."""
+    relative_hazards = (hazard_vector - robot_state[:2]).flatten()
+    return np.hstack((robot_state, relative_hazards))
+
 
 class MPCLearner:
+    gamma = 0.99
+    dropout, l2_penalty = 0, 0
+    neurons, layers = 500, 2
+    MEMORY_SIZE, MIN_REPLAY_MEMORY_SIZE = 100000, 10000  # Minimum number of steps in a memory to start training
+    MINIBATCH_SIZE = 512
+
     def __init__(self, state_dims=10, action_dims=2):
-        self.MEMORY_SIZE = 100000
-        self.MIN_REPLAY_MEMORY_SIZE = 10000  # Minimum number of steps in a memory to start training
+
         self.REPLAY_MEMORY = deque(maxlen=self.MEMORY_SIZE)
-        self.MINIBATCH_SIZE = 512
         self.state_dims = 10
         self.hazard_dims = state_dims
         self.action_dims = action_dims
         self.combined_dims = self.state_dims + self.action_dims
         self.policy_dims = self.state_dims + self.hazard_dims
-        self.neurons = 500
-        self.layers = 2
-        dropout = 0
-        l2_penalty = 0
+
+
         self.dynamics_model = create_model(input_size=self.combined_dims,
                                            output_size=self.state_dims,
                                            output_activation="linear",
                                            neurons=self.neurons,
                                            layers=self.layers,
-                                           dr=dropout,
-                                           l2_penalty=l2_penalty)
+                                           dr=self.dropout,
+                                           l2_penalty=self.l2_penalty)
         self.input_mean, self.input_std, self.output_mean, self.output_std = [0, 1, 0, 1]
         self.normalised = False
         self.safety_threshold = 3
@@ -62,18 +80,19 @@ class MPCLearner:
     def compute_trajectories(self, initial_robot_state, goal_pos, hazard_vector, policy):
         trajectory_length = 40   # MPC Horizon length
         no_trajectories = 100
-
         trajectory_values = np.zeros(no_trajectories)
-
         current_robot_state = deepcopy(initial_robot_state)
         old_robot_state = current_robot_state
         policy_actions = []
         policy_reward = 0
         avg_policy_cost, max_policy_cost = 0, 0
-        gamma = 0.99
         discount = 1
         for i in range(trajectory_length):
-            next_action = policy(np.squeeze(current_robot_state), goal_pos, hazard_vector)
+            if policy == human_policy:
+                next_action = policy(np.squeeze(current_robot_state), goal_pos, hazard_vector)
+            else:
+                policy_state = preprocess_state2(current_robot_state, hazard_vector)
+                next_action = policy(policy_state)
             policy_actions.append(next_action)
             delta_state = np.squeeze(self.model_prediction(current_robot_state, next_action))
             current_robot_state = old_robot_state + delta_state
@@ -81,18 +100,18 @@ class MPCLearner:
             max_policy_cost = max(max_policy_cost, state_cost)
             avg_policy_cost += state_cost
             policy_reward += discount * compute_value(current_robot_state, old_robot_state)
-            discount *= gamma
+            discount *= self.gamma
             old_robot_state = current_robot_state
 
         avg_policy_cost /= trajectory_length
         policy_actions = np.array(policy_actions).reshape(1, trajectory_length, self.action_dims)
 
-        sigmas = np.squeeze(np.clip(np.std(policy_actions, axis=1), 1e-2, None))
+        sigmas = np.squeeze(np.clip(np.std(policy_actions, axis=1), 1e-2, 1))
         deltas = np.sum(np.abs(policy_actions[:, 1:, :]-policy_actions[:, :-1, :]), axis=1)
         length_scales = np.clip(np.squeeze(trajectory_length/(deltas/sigmas)), 0.01, trajectory_length)
         action_sequences = np.repeat(policy_actions, no_trajectories, axis=0) #.reshape(trajectory_length, no_trajectories, self.action_dims)
         #print(sigmas, deltas, length_scales)
-        correlated_noise = add_correlated_noise(sigmas, length_scales, independent=False)
+        correlated_noise = add_correlated_noise(2*sigmas, length_scales, independent=False)
         mpc_action_sequences = np.clip(action_sequences + correlated_noise, -1, 1)
         trajectory_max_costs = np.zeros(no_trajectories)
         trajectory_avg_costs = np.zeros(no_trajectories)
@@ -110,20 +129,22 @@ class MPCLearner:
             state_values = compute_values(current_states, old_robot_states)
             trajectory_max_costs = np.max((trajectory_max_costs, state_costs), axis=0)  # Infinite norm penalty on states
             trajectory_values += discount*state_values
-            discount *= gamma
+            discount *= self.gamma
             old_robot_states = current_states
         trajectory_avg_costs /= trajectory_length
-        avg_cost_limit = self.safety_threshold
-        max_cost_limit = 0.85
-        #print(avg_cost_limit, max_cost_limit)
+
+        avg_cost_limit = max(self.safety_threshold, avg_policy_cost)
+        max_cost_limit = max(0.85, max_policy_cost)
+        # Discount all trajectories less safe than limit or policy.
         bad_trajectories1 = np.where(trajectory_avg_costs > avg_cost_limit)
         trajectory_values[bad_trajectories1] = -np.inf
         bad_trajectories2 = np.where(trajectory_max_costs > max_cost_limit)
         trajectory_values[bad_trajectories2] = -np.inf
         best_trajectory = np.argmax(trajectory_values)
-        #print(f"Policy cost: {policy_cost}")
+
         if policy_reward > trajectory_values[best_trajectory]:
-            #print("Overridden")
+            if avg_policy_cost > self.safety_threshold or max_policy_cost > 0.85:
+                print("Couldn't find safe policy :(")
             return action_sequences[0, 0], 0
         else:
             #print("Best: ", mpc_action_sequences[best_trajectory, 0], trajectory_values[best_trajectory], trajectory_avg_costs[best_trajectory],
@@ -298,6 +319,11 @@ def main(EPISODES, mpc_learner=None, render=False, save_name=None, policy=human_
                 else:
                     action = policy(robot_state, env.goal_pos[:2], hazard_vector).reshape(2,)
             else:
+                print(robot_state.shape)
+                print(goal_pos.shape)
+                print(hazard_vector.shape)
+                print(action.shape)
+                raise ValueError
                 action, accepted = mpc_learner.compute_trajectories(robot_state, goal_pos, hazard_vector, policy)
                 no_accepted += accepted
             new_env_state, env_reward, done, info = env.step(action)
@@ -334,30 +360,6 @@ def main(EPISODES, mpc_learner=None, render=False, save_name=None, policy=human_
 
 
 if __name__ == "__main__":
-    config = {
-        'robot_base': 'xmls/point.xml',
-        'task': 'goal',
-        'continue_goal': False,
-        'observation_flatten': False,
-        'observe_goal_dist': True,
-        'observe_goal_comp': True,
-        'observe_goal_lidar': False,
-        'observe_hazards': True,
-        'observe_vases': False,
-        'observe_circle': True,
-        'observe_vision': False,
-        'observe_gremlins': False,
-        'constrain_hazards': True,
-        'constrain_vases': False,
-        'constrain_gremlins': False,
-        'lidar_max_dist': None,
-        'lidar_num_bins': 32,
-        'hazards_num': 10,
-        'vases_num': 0,
-        'gremlins_num': 0,
-        'gremlins_travel': 0.5,
-        'gremlins_keepout': 0.4,
-    }
     env = Engine(config)
 
     training = False

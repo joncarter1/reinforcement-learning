@@ -16,6 +16,31 @@ import matplotlib.pyplot as plt
 i.e. theta defined in the polar sense.
 """
 
+config = {
+        'robot_base': 'xmls/point.xml',
+        'task': 'goal',
+        'continue_goal': False,
+        'observation_flatten': False,
+        'observe_goal_dist': True,
+        'observe_goal_comp': True,
+        'observe_goal_lidar': False,
+        'observe_hazards': True,
+        'observe_vases': False,
+        'observe_circle': True,
+        'observe_vision': False,
+        'observe_gremlins': False,
+        'constrain_hazards': True,
+        'constrain_vases': False,
+        'constrain_gremlins': False,
+        'lidar_max_dist': None,
+        'lidar_num_bins': 32,
+        'hazards_num': 10,
+        'vases_num': 0,
+        'gremlins_num': 0,
+        'gremlins_travel': 0.5,
+        'gremlins_keepout': 0.4,
+    }
+
 def sigmoid(x):
     return 2 / (1 + np.exp(-x)) - 1
 
@@ -66,7 +91,7 @@ def path_finder(robot_state, goal_pos, hazards):
     sq_distances = np.einsum('ij...,ji...->i...', displacements, np.swapaxes(displacements, 0, 1))
     costs = np.sum(np.exp(-sq_distances/(sigma**2)), axis=0)
     angle_penalties = 1-np.exp(-angles**2/(sigma_a**2))
-    l2 = 1
+    l2 = 0.5
     angle_values = angle_penalties+l2*costs
     path_ind = np.argmin(angle_values)
     delta_angle = angles[path_ind]*180/np.pi

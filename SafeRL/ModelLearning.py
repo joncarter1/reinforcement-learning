@@ -3,7 +3,7 @@ warnings.filterwarnings('ignore')
 import os
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
 import tensorflow as tf
-from keras.layers import Dropout, Activation, Dense, Input
+from keras.layers import Dropout, Activation, Dense, Input, GaussianNoise
 from keras.models import Model, load_model
 from keras.optimizers import Adam
 from keras.utils.vis_utils import plot_model
@@ -57,22 +57,26 @@ def gaussian_nll(ytrue, ypreds):
     return K.mean(-log_likelihood)
 
 
-def create_model(input_size,
-                 output_size,
+def create_model(input_size, output_size,
                  probabilistic=True,
-                 layers=2,
-                 neurons=500,
+                 layers=2, neurons=500,
                  output_activation="linear",
-                 dr=0.0,
-                 l2_penalty=0.0,
-                 lr=0.001):
-    input_layer = Input(shape=(input_size,))
-
+                 dr=0.0, noise=0,
+                 l2_penalty=0.0, lr=0.001):
     loss = "mse"
     if probabilistic:
-        loss, output_size = gaussian_nll, 2*output_size
+        loss, output_size = gaussian_nll, 2 * output_size
 
-    current_layer = input_layer
+    input_layer = Input(shape=(input_size,))
+    if noise:
+        current_layer = GaussianNoise(stddev=noise)(input_layer)
+    else:
+        current_layer = input_layer
+
+
+
+
+
     for i in range(layers):
         dense_layer = Dense(neurons, kernel_initializer='random_normal', bias_initializer='zeros',
                             kernel_regularizer=l2(l2_penalty), bias_regularizer=l2(l2_penalty),

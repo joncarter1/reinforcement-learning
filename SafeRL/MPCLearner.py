@@ -128,36 +128,10 @@ class MPCLearner2:
         pickle.dump(self, open(model_name, "wb"))
 
 
-class NNPolicy:
-    layers = 2
-    neurons = 500
-    dr = 0.0
-    l2_penalty = 0.0
-    lr = 0.001
-
-    def __init__(self, state_dims, action_dims, existing_model=None):
-        self.state_dims = state_dims
-        self.action_dims = action_dims
-        if not existing_model:
-            self.model = create_model(input_size=self.state_dims,
-                                       output_size=self.action_dims,
-                                       output_activation="tanh",
-                                       neurons=self.neurons,
-                                       layers=self.layers,
-                                       dr=self.dr,
-                                       l2_penalty=self.l2_penalty,
-                                       lr=self.lr)
-        else:
-            self.model = existing_model
-
-    def __call__(self, state):
-        return self.model.predict(state)
-
 
 if __name__ == "__main__":
     env = gym.make("MountainCarContinuous-v0")
 
-    nn_policy = NNPolicy(2, 1)
     load = False
     if load:
         mpc_learner = pickle.load(open("MountainCarDE", "rb"))

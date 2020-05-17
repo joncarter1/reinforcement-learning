@@ -7,6 +7,31 @@ import threading
 import numpy as np
 from safety_gym.envs.engine import Engine
 
+config = {
+        'robot_base': 'xmls/point.xml',
+        'task': 'goal',
+        'continue_goal': False,
+        'observation_flatten': False,
+        'observe_goal_dist': True,
+        'observe_goal_comp': True,
+        'observe_goal_lidar': False,
+        'observe_hazards': True,
+        'observe_vases': False,
+        'observe_circle': True,
+        'observe_vision': False,
+        'observe_gremlins': False,
+        'constrain_hazards': True,
+        'constrain_vases': False,
+        'constrain_gremlins': False,
+        'lidar_max_dist': None,
+        'lidar_num_bins': 32,
+        'hazards_num': 10,
+        'vases_num': 0,
+        'gremlins_num': 0,
+        'gremlins_travel': 0.5,
+        'gremlins_keepout': 0.4,
+    }
+
 def key_check(l_key, r_key, u_key, d_key):
     presses = pygame.event.get(pump=True)
     if presses != []:
