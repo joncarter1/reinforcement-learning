@@ -222,7 +222,7 @@ class MPCLearner:
         best_trajectory = np.argmax(trajectory_values)
         self.best_trajectories = mpc_action_sequences[np.argsort(-trajectory_values)[:self.n_parents-1]]
 
-        print("{} safe trajectories found".format(len(np.where(trajectory_values != -np.inf)[0])))
+        #print("{} safe trajectories found".format(len(np.where(trajectory_values != -np.inf)[0])))
 
         """if policy_reward > trajectory_values[best_trajectory]:
             print(r"Using $\pi_B$")
