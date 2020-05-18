@@ -39,8 +39,10 @@ def preprocess_env_state(robot_position, env_state_dict):
 
 def preprocess_state2(robot_state, hazard_vector):
     """Pre process state."""
-    relative_hazards = (hazard_vector - robot_state[:2]).flatten()
-    return np.hstack((robot_state, relative_hazards))
+    relative_hazards = hazard_vector - robot_state[:2]
+    hazard_distances = np.linalg.norm(relative_hazards, axis=1)
+    sorted_hazards = relative_hazards[np.argsort(-hazard_distances)]
+    return np.hstack((robot_state, sorted_hazards.flatten()))
 
 
 class MPCLearner:
@@ -51,14 +53,16 @@ class MPCLearner:
     MINIBATCH_SIZE = 512
 
     def __init__(self, state_dims=10, action_dims=2):
-
+        self.trajectory_length = 40
+        self.no_trajectories = 100
+        self.n_parents = 5
         self.REPLAY_MEMORY = deque(maxlen=self.MEMORY_SIZE)
         self.state_dims = 10
         self.hazard_dims = state_dims
         self.action_dims = action_dims
         self.combined_dims = self.state_dims + self.action_dims
         self.policy_dims = self.state_dims + self.hazard_dims
-
+        self.best_trajectories = None
 
         self.dynamics_model = create_model(input_size=self.combined_dims,
                                            output_size=self.state_dims,
@@ -69,7 +73,7 @@ class MPCLearner:
                                            l2_penalty=self.l2_penalty)
         self.input_mean, self.input_std, self.output_mean, self.output_std = [0, 1, 0, 1]
         self.normalised = False
-        self.safety_threshold = 3
+        self.safety_threshold = 0.8
 
     def model_prediction(self, robot_state, action):
         state_action = np.expand_dims(np.hstack((robot_state, action)), axis=1).T
@@ -77,17 +81,64 @@ class MPCLearner:
         normalised_output = self.dynamics_model.predict(normalised_input)
         return normalised_output * self.output_std + self.output_mean
 
-    def compute_trajectories(self, initial_robot_state, goal_pos, hazard_vector, policy):
-        trajectory_length = 40   # MPC Horizon length
-        no_trajectories = 100
-        trajectory_values = np.zeros(no_trajectories)
+    def generate_from_parents(self, policy_actions):
+        """Generate candidate child action sequences from parents of previous generation."""
+        parent_trajectories = np.vstack((policy_actions, self.best_trajectories))
+        child_trajectories = None
+
+        automatic = True
+        if automatic:
+            sigmas = np.squeeze(np.clip(np.std(policy_actions, axis=1), 1e-2, 1))
+            deltas = np.sum(np.abs(policy_actions[:, 1:, :] - policy_actions[:, :-1, :]), axis=1)
+            length_scales = np.clip(np.squeeze(self.trajectory_length / (deltas / sigmas)), 1, self.trajectory_length)
+        else:
+            sigmas = np.array([0.01, 0.2])
+            length_scales = np.array([20, 20])
+
+        for i in range(self.n_parents):
+            action_sequences = np.repeat(parent_trajectories[i:i+1,:,:], self.no_trajectories/self.n_parents, axis=0)
+            child_trajectories = action_sequences if child_trajectories is None else \
+                                                    np.vstack((child_trajectories, action_sequences))
+
+
+        # print(sigmas, deltas, length_scales)
+        correlated_noise = add_correlated_noise(sigmas, length_scales, independent=False)
+        #child_trajectories += correlated_noise
+        """
+        for dim in range(self.action_dims):
+            traj_cov = np.cov(parent_trajectories[:, :, dim], rowvar=False)
+            child_dim = np.random.multivariate_normal(traj_mean[:, dim], traj_cov, size=no_trajectories)
+            child_trajectories.append(child_dim)"""
+        np.clip(child_trajectories+correlated_noise, -1, 1, out=child_trajectories)
+
+        plot = True if random.random() > 1 else False
+
+        if plot:
+            plt.figure()
+            fig, axes = plt.subplots(2, 1, sharex=True, squeeze=True)
+            for i in range(2):
+                for k in range(5):
+                    axes[i].plot(parent_trajectories[k, :, i], "--", linewidth=0.5, color="green") #, label="Parent trajectories")
+                for j in range(100):
+                    axes[i].plot(child_trajectories[j, :, i], "--", linewidth=0.1, color="red") #, label="Sample trajectories")
+            axes[0].set_ylabel("Forward action, f")
+            axes[1].set_ylabel("Rotation action, r")
+            axes[1].set_xlabel("Sample index")
+            #plt.legend()
+            # plt.savefig("correlatedpolicyimprovement")
+            plt.show()
+        return child_trajectories
+
+    def generate_policy_trajectory(self, initial_robot_state, goal_pos, hazard_vector, policy):
+        """Generate sequence of policy actions from current state."""
         current_robot_state = deepcopy(initial_robot_state)
         old_robot_state = current_robot_state
         policy_actions = []
         policy_reward = 0
         avg_policy_cost, max_policy_cost = 0, 0
         discount = 1
-        for i in range(trajectory_length):
+        for i in range(self.trajectory_length):
+            terminal = i == self.trajectory_length-1
             if policy == human_policy:
                 next_action = policy(np.squeeze(current_robot_state), goal_pos, hazard_vector)
             else:
@@ -96,27 +147,49 @@ class MPCLearner:
             policy_actions.append(next_action)
             delta_state = np.squeeze(self.model_prediction(current_robot_state, next_action))
             current_robot_state = old_robot_state + delta_state
-            state_cost = compute_cost(current_robot_state, goal_pos, hazard_vector)
+            state_cost = compute_hazard_cost(current_robot_state, goal_pos, hazard_vector)
             max_policy_cost = max(max_policy_cost, state_cost)
             avg_policy_cost += state_cost
-            policy_reward += discount * compute_value(current_robot_state, old_robot_state)
+            policy_reward += discount * compute_value(current_robot_state, old_robot_state, goal_pos, hazard_vector, terminal)
             discount *= self.gamma
             old_robot_state = current_robot_state
 
-        avg_policy_cost /= trajectory_length
-        policy_actions = np.array(policy_actions).reshape(1, trajectory_length, self.action_dims)
+        avg_policy_cost /= self.trajectory_length
+        policy_actions = np.array(policy_actions).reshape(1, self.trajectory_length, self.action_dims)
+        return policy_actions, avg_policy_cost, max_policy_cost, policy_reward
 
-        sigmas = np.squeeze(np.clip(np.std(policy_actions, axis=1), 1e-2, 1))
-        deltas = np.sum(np.abs(policy_actions[:, 1:, :]-policy_actions[:, :-1, :]), axis=1)
-        length_scales = np.clip(np.squeeze(trajectory_length/(deltas/sigmas)), 0.01, trajectory_length)
-        action_sequences = np.repeat(policy_actions, no_trajectories, axis=0) #.reshape(trajectory_length, no_trajectories, self.action_dims)
-        #print(sigmas, deltas, length_scales)
-        correlated_noise = add_correlated_noise(2*sigmas, length_scales, independent=False)
+    def generate_from_policy(self, policy_actions):
+        """Generate candidate action sequences from policy."""
+        action_sequences = np.repeat(policy_actions, self.no_trajectories, axis=0)
+        automatic = False
+        if automatic:
+            sigmas = np.squeeze(np.clip(np.std(policy_actions, axis=1), 1e-2, 1))
+            deltas = np.sum(np.abs(policy_actions[:, 1:, :] - policy_actions[:, :-1, :]), axis=1)
+            length_scales = np.clip(np.squeeze(self.trajectory_length / (deltas / sigmas)), 0.01, self.trajectory_length)
+        else:
+            sigmas = np.array([0.01, 0.2])
+            length_scales = np.array([20, 20])
+
+        # print(sigmas, deltas, length_scales)
+        correlated_noise = add_correlated_noise(sigmas, length_scales, independent=False)
         mpc_action_sequences = np.clip(action_sequences + correlated_noise, -1, 1)
+        return mpc_action_sequences
+
+    def compute_trajectories(self, initial_robot_state, goal_pos, hazard_vector, policy):
+        trajectory_length = 40  # MPC Horizon length
+        no_trajectories = 100
+        trajectory_values = np.zeros(no_trajectories)
         trajectory_max_costs = np.zeros(no_trajectories)
         trajectory_avg_costs = np.zeros(no_trajectories)
+        trajectory_speed_costs = np.zeros(no_trajectories)
         current_states = np.repeat(initial_robot_state.reshape(1, self.state_dims), no_trajectories, axis=0)
         old_robot_states = current_states
+        policy_actions, avg_policy_cost, max_policy_cost, policy_reward = self.generate_policy_trajectory(
+            initial_robot_state, goal_pos, hazard_vector, policy)
+        if self.best_trajectories is None:
+            mpc_action_sequences = self.generate_from_policy(policy_actions)
+        else:
+            mpc_action_sequences = self.generate_from_parents(policy_actions)
         discount = 1
         for i in range(trajectory_length):
             state_actions = np.hstack((current_states, mpc_action_sequences[:, i]))
@@ -124,44 +197,65 @@ class MPCLearner:
             normalised_outputs = self.dynamics_model.predict(normalised_inputs)
             delta_states = normalised_outputs*self.output_std + self.output_mean
             current_states = old_robot_states + delta_states
-            state_costs = np.apply_along_axis(compute_cost, 1, current_states, goal_pos, hazard_vector)
-            trajectory_avg_costs += state_costs
-            state_values = compute_values(current_states, old_robot_states)
-            trajectory_max_costs = np.max((trajectory_max_costs, state_costs), axis=0)  # Infinite norm penalty on states
+            state_hazard_costs = np.apply_along_axis(compute_hazard_cost, 1, current_states, goal_pos, hazard_vector)
+            trajectory_avg_costs += state_hazard_costs
+            speed_costs = np.linalg.norm(current_states[:, 7:9], axis=1)
+            trajectory_speed_costs = np.max((trajectory_speed_costs, speed_costs), axis=0)
+            terminal = i == trajectory_length-1
+            state_values = compute_values(current_states, old_robot_states, goal_pos, hazard_vector, terminal)
+            trajectory_max_costs = np.max((trajectory_max_costs, state_hazard_costs), axis=0)  #  Infinite norm penalty on states
             trajectory_values += discount*state_values
             discount *= self.gamma
             old_robot_states = current_states
         trajectory_avg_costs /= trajectory_length
 
-        avg_cost_limit = max(self.safety_threshold, avg_policy_cost)
-        max_cost_limit = max(0.85, max_policy_cost)
-        # Discount all trajectories less safe than limit or policy.
+        avg_cost_limit = self.safety_threshold
+        max_cost_limit = 0.85
+        speed_limit = 1.5
+        # Discount all trajectories less safe than limit.
         bad_trajectories1 = np.where(trajectory_avg_costs > avg_cost_limit)
         trajectory_values[bad_trajectories1] = -np.inf
         bad_trajectories2 = np.where(trajectory_max_costs > max_cost_limit)
         trajectory_values[bad_trajectories2] = -np.inf
+        bad_trajectories3 = np.where(trajectory_speed_costs > speed_limit)
+        trajectory_values[bad_trajectories3] = -np.inf
         best_trajectory = np.argmax(trajectory_values)
+        self.best_trajectories = mpc_action_sequences[np.argsort(-trajectory_values)[:self.n_parents-1]]
 
-        if policy_reward > trajectory_values[best_trajectory]:
+        print("{} safe trajectories found".format(len(np.where(trajectory_values != -np.inf)[0])))
+
+        """if policy_reward > trajectory_values[best_trajectory]:
+            print(r"Using $\pi_B$")
             if avg_policy_cost > self.safety_threshold or max_policy_cost > 0.85:
-                print("Couldn't find safe policy :(")
-            return action_sequences[0, 0], 0
+                print("Couldn't find any safe policy :(")
+            return action_sequences[0, 0], 0"""
+        if max_policy_cost < 0.85 and avg_policy_cost < avg_cost_limit:
+            if policy_reward > np.max(trajectory_values):
+                print("Policy is best")
+                print(policy_actions.shape)
+                return policy_actions[0, 0], 0
+
+        if np.max(trajectory_values) == -np.inf:
+            print("No safe trajectories found. Emergency stop.")
+            """if avg_policy_cost > self.safety_threshold or max_policy_cost > 0.85:
+                print("Base policy also unsafe :(")"""
+            return np.array([0, 0]), 0
         else:
             #print("Best: ", mpc_action_sequences[best_trajectory, 0], trajectory_values[best_trajectory], trajectory_avg_costs[best_trajectory],
             #      trajectory_max_costs[best_trajectory])
 
             #print("Policy: ", policy_actions[0, 0], policy_reward, avg_policy_cost, max_policy_cost)
 
-            if random.random() > 2:
+            if random.random() > 1:
                 plt.figure()
                 fig, axes = plt.subplots(2, 1, sharex=True, squeeze=True)
                 for i in range(2):
-                    for j in range(10):
+                    for j in range(100):
                         if j == best_trajectory:
-                            j += 1 if j == best_trajectory else 0
-                        axes[i].plot(mpc_action_sequences[j, :, i], "--", linewidth=0.5, color="red")
-                    axes[i].plot(mpc_action_sequences[best_trajectory, :, i], "--", linewidth=0.5, color="red", label="Sample trajectories")
-                    axes[i].plot(policy_actions[0, :, i], color="blue", label="Base policy trajectory")
+                            continue
+                        axes[i].plot(mpc_action_sequences[j, :, i], "--", linewidth=0.1, color="red")
+                    axes[i].plot(mpc_action_sequences[best_trajectory, :, i], "--", linewidth=0.2, color="red", label="Sample trajectories")
+                    #axes[i].plot(policy_actions[0, :, i], color="blue", label="Base policy trajectory")
                     axes[i].plot(mpc_action_sequences[best_trajectory, :, i], color="green", label="Best sample trajectory")
                 axes[0].set_ylabel("Forward action, f")
                 axes[1].set_ylabel("Rotation action, r")
@@ -169,7 +263,7 @@ class MPCLearner:
                 plt.legend()
                 #plt.savefig("correlatedpolicyimprovement")
                 plt.show()
-                raise ValueError
+                #raise ValueError
             return mpc_action_sequences[best_trajectory, 0], 1
 
     def normalise_buffer(self):
@@ -257,20 +351,33 @@ def add_correlated_noise(sigmas=[0.1], lengthscales=[0.1], trajectory_length=40,
     return correlations
 
 
-def compute_cost(robot_state, goal_pos, hazards):
+def compute_hazard_cost(robot_state, goal_pos, hazards):
     sigma = 0.3
     displacements = hazards - (robot_state[:2]+goal_pos)
     distances = np.einsum('ij,ji->i', displacements, displacements.T)
-    return np.max(np.exp(-(distances / sigma)**2))
+    speed_penalty = np.exp(-np.linalg.norm(robot_state[7:9]))
+    hazard_rating = np.max(np.exp(-(distances / sigma)**2))
+    return hazard_rating
 
 
-def compute_value(robot_state, old_robot_state):
-    end_reward = 5 if np.linalg.norm(robot_state[:2]) < 0.3 else 0
-    return np.linalg.norm(old_robot_state[:2]) - np.linalg.norm(robot_state[:2]) + end_reward
+def compute_speed_cost(robot_state):
+    """Linear penalty on speed."""
+    return np.linalg.norm(robot_state[7:9])
 
 
-def compute_values(robot_states, old_robot_states):
-    return np.array([compute_value(robot_state, old_robot_state)
+def compute_value(robot_state, old_robot_state, goal_pos, hazards, terminal=False, print_reward=False):
+    distance_reward = 10*(np.linalg.norm(old_robot_state[:2]) - np.linalg.norm(robot_state[:2]))
+    end_reward = 10 if np.linalg.norm(robot_state[:2]) < 0.2 else 0
+    distance_reward2 = robot_state[2] if terminal else 0
+    hazard_penalty = compute_hazard_cost(robot_state, goal_pos, hazards) if terminal else 0
+    #angle_reward = robot_state[3]*(1-hazard_penalty)  # Encourage aiming for goal away from hazards
+    if print_reward:
+        print("DEHA", distance_reward, end_reward, hazard_penalty, distance_reward2)
+    return distance_reward+end_reward-hazard_penalty+distance_reward2 #+angle_reward #-angle_penalty
+
+
+def compute_values(robot_states, old_robot_states, goal_pos, hazards, terminal=False):
+    return np.array([compute_value(robot_state, old_robot_state, goal_pos, hazards, terminal)
                      for (robot_state, old_robot_state)
                      in zip(robot_states, old_robot_states)])
 
@@ -319,11 +426,6 @@ def main(EPISODES, mpc_learner=None, render=False, save_name=None, policy=human_
                 else:
                     action = policy(robot_state, env.goal_pos[:2], hazard_vector).reshape(2,)
             else:
-                print(robot_state.shape)
-                print(goal_pos.shape)
-                print(hazard_vector.shape)
-                print(action.shape)
-                raise ValueError
                 action, accepted = mpc_learner.compute_trajectories(robot_state, goal_pos, hazard_vector, policy)
                 no_accepted += accepted
             new_env_state, env_reward, done, info = env.step(action)
@@ -331,7 +433,8 @@ def main(EPISODES, mpc_learner=None, render=False, save_name=None, policy=human_
             episode_cost += info["cost"]
             new_position = env.robot_pos[:2] - env.goal_pos[:2]
             new_robot_state = form_state(new_env_state, new_position)
-            episode_reward += discount*compute_value(new_robot_state, robot_state)
+
+            episode_reward += discount*compute_value(new_robot_state, robot_state, goal_pos, hazard_vector)
             discount *= gamma
             #print(f"State cost : {compute_cost(robot_state, goal_pos, hazard_vector  )}")
             if save_name:
@@ -342,6 +445,7 @@ def main(EPISODES, mpc_learner=None, render=False, save_name=None, policy=human_
                 mpc_learner.train_on_batch()
             env_state = new_env_state
             robot_state = new_robot_state
+
             if render:
                 env.render()
 
@@ -379,9 +483,8 @@ if __name__ == "__main__":
         ll.save("mpcmodel2")
         #main(EPISODES=50, mpc_learner=ll, render=False, policy=human_policy, save=True)
     else:
-        loaded_learner = pickle.load(open("MPCModels/mpcmodel", "rb"))
-        loaded_learner.safety_threshold = 0.8
-        seeds = range(28, 48)
+        loaded_learner = pickle.load(open("MPCModels/mpcmodel1", "rb"))
+        seeds = range(35, 48)
         for seed in seeds:
             env.seed(seed)  # 18 good
             #np.random.seed(100)

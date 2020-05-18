@@ -8,7 +8,7 @@ import random
 from keras.utils.vis_utils import plot_model
 from SafeRL.Controller import human_policy, safe_policy, config
 from safety_gym.envs.engine import Engine
-from SafeRL.MPC import form_state, compute_value, compute_cost, preprocess_env_state, preprocess_state2, MPCLearner
+from SafeRL.MPC import form_state, compute_value, compute_hazard_cost, compute_speed_cost, preprocess_env_state, preprocess_state2, MPCLearner
 
 
 class NNPolicy:
@@ -123,6 +123,7 @@ def main(EPISODES, render=False, save_name=None, policy=human_policy, mpc_model=
         while not done:
             hazards = env.gremlins_obj_pos + env.hazards_pos
             hazard_vector = np.array(hazards)[:, :2]
+            #policy_state = preprocess_env_state(position, env_state)
             policy_state = preprocess_state2(robot_state, hazard_vector)
             if policy == human_policy:
                 action = policy(robot_state, goal_pos, hazard_vector).reshape(2,)
@@ -135,7 +136,10 @@ def main(EPISODES, render=False, save_name=None, policy=human_policy, mpc_model=
             episode_cost += info["cost"]
             new_position = env.robot_pos[:2] - env.goal_pos[:2]
             new_robot_state = form_state(new_env_state, new_position)
-            episode_reward += compute_value(new_robot_state, robot_state)
+            #print("Angle", new_robot_state[3])
+            #print("Value", compute_value(new_robot_state, robot_state, goal_pos, hazard_vector, True, True))
+            #print(compute_value(new_robot_state, robot_state, goal_pos, hazard_vector, False))
+            # episode_reward += compute_value(new_robot_state, robot_state)
             discount *= gamma
             robot_state = new_robot_state
             steps += 1
@@ -154,9 +158,10 @@ def main(EPISODES, render=False, save_name=None, policy=human_policy, mpc_model=
 
 if __name__ == "__main__":
     env = Engine(config)
-    nn_policy = pickle.load(open("nn_policy3", "rb"))
-    mpc_model = pickle.load(open("MPCModels/mpcmodel", "rb"))
+    nn_policy = pickle.load(open("nn_policy2", "rb"))
+    mpc_model = pickle.load(open("MPCModels/mpcmodel1", "rb"))
     seed = 1000
     np.random.seed(seed)
     env.seed(seed)
-    main(EPISODES=1000, render=True, save_name=None, policy=nn_policy, mpc_model=None) #)
+    render, save_name, policy, mpc_model = True, None, nn_policy, mpc_model
+    main(EPISODES=100, render=render, save_name=save_name, policy=policy, mpc_model=mpc_model)

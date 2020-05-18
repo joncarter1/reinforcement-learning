@@ -73,10 +73,6 @@ def create_model(input_size, output_size,
     else:
         current_layer = input_layer
 
-
-
-
-
     for i in range(layers):
         dense_layer = Dense(neurons, kernel_initializer='random_normal', bias_initializer='zeros',
                             kernel_regularizer=l2(l2_penalty), bias_regularizer=l2(l2_penalty),
