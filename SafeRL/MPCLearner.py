@@ -1,13 +1,13 @@
 import numpy as np
-from SafeRL.ModelLearning import create_model, NNModel
-from SafeRL.MPC import MPCLearner
+from ModelLearning import create_model, NNModel
+from MPC import MPCLearner
 import gym
 import pickle
 from copy import deepcopy
 from collections import deque
 import random
 from keras.utils.vis_utils import plot_model
-from SafeRL.ModelLearning import gaussian_nll
+from ModelLearning import gaussian_nll
 from keras.utils.generic_utils import get_custom_objects
 
 get_custom_objects().update({"gaussian_nll": gaussian_nll})

@@ -6,9 +6,9 @@ from copy import deepcopy
 from collections import deque
 import random
 from keras.utils.vis_utils import plot_model
-from SafeRL.Controller import human_policy, safe_policy, config
+from Controller import human_policy, safe_policy, config
 from safety_gym.envs.engine import Engine
-from SafeRL.MPC import form_state, compute_value, compute_hazard_cost, compute_speed_cost, preprocess_env_state, preprocess_state2, MPCLearner
+from MPC import form_state, compute_value, compute_hazard_cost, compute_speed_cost, preprocess_env_state, preprocess_state2, MPCLearner
 
 
 class NNPolicy:
