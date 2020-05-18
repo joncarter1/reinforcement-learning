@@ -9,7 +9,7 @@ from keras.models import load_model
 import os
 from copy import deepcopy
 from collections import deque
-from ModelLearning import NNModel
+from SafeRL.ModelLearning import NNModel
 import matplotlib.pyplot as plt
 """
 -ve rotation = clockwise torque
