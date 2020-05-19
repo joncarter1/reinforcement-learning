@@ -8,7 +8,7 @@ import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt
 from SafeRL.MPC import MPCLearner
-pe_params = DotMap(name="model", num_networks=5, sess=None, load_model=None, model_dir="PETS")
+pe_params = DotMap(name="bnn_model", num_networks=5, sess=None, load_model=None, model_dir="bnn_models")
 
 pe_model = BNN(pe_params)
 
@@ -34,4 +34,4 @@ if __name__ == "__main__":
     print(state_action_vector.shape)
     print(delta_state_vector.shape)
     pe_model.train(inputs=state_action_vector, targets=delta_state_vector, epochs=1, holdout_ratio=0.1)
-    pickle.dump(pe_model, open("bnn_model","wb"))
+    pe_model.save()
