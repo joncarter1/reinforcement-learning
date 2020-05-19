@@ -8,7 +8,11 @@ import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt
 from SafeRL.MPC import MPCLearner
-pe_params = DotMap(name="bnn_model2", num_networks=5, sess=None, load_model=None, model_dir="bnn_models")
+from SafeRL.ModelLearning import gaussian_nll
+from keras.utils.generic_utils import get_custom_objects
+get_custom_objects().update({"gaussian_nll": gaussian_nll})
+
+pe_params = DotMap(name="bnn_model3", num_networks=5, sess=None, load_model=None, model_dir="bnn_models")
 
 pe_model = BNN(pe_params)
 
@@ -26,12 +30,15 @@ pe_model.finalize(tf.train.AdamOptimizer, {"learning_rate": 0.001})
 
 
 if __name__ == "__main__":
-    ll = pickle.load(open("SafeRL/MPCModels/mpcmodel1", "rb"))
+    ll = pickle.load(open("SafeRL/MPCModels/pempc_model", "rb"))
     model_data = ll.REPLAY_MEMORY
-    input_mean, input_std, output_mean, output_std = ll.input_mean, ll.input_std, ll.output_mean, ll.output_std
-    state_action_vector = np.array(model_data)[:, :combined_dims]
-    state_action_vector = state_action_vector*input_mean + input_std
-    delta_state_vector = np.array(model_data)[:, -state_dims:]
-    delta_state_vector = delta_state_vector*output_std + output_std
-    pe_model.train(inputs=state_action_vector, targets=delta_state_vector, epochs=100, holdout_ratio=0.1)
+    state_action_vector = np.array(ll.REPLAY_MEMORY)[:, :ll.combined_dims]
+    delta_state_vector = np.array(ll.REPLAY_MEMORY)[:, -ll.state_dims:]
+    input_mean = np.mean(state_action_vector, axis=0)
+    input_std = np.std(state_action_vector, axis=0)
+    output_mean = np.mean(delta_state_vector, axis=0)
+    output_std = np.std(delta_state_vector, axis=0)
+    state_action_vector = (state_action_vector-input_mean)/input_std
+    delta_state_vector = (delta_state_vector-output_mean)/output_std
+    pe_model.train(inputs=state_action_vector, targets=delta_state_vector, epochs=25, holdout_ratio=0.1)
     pe_model.save()
