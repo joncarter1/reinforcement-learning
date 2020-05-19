@@ -137,7 +137,7 @@ def main(EPISODES, render=False, save_name=None, policy=human_policy, mpc_model=
             new_position = env.robot_pos[:2] - env.goal_pos[:2]
             new_robot_state = form_state(new_env_state, new_position)
             #print("Angle", new_robot_state[3])
-            #print("Value", compute_value(new_robot_state, robot_state, goal_pos, hazard_vector, True, True))
+            print("Value", compute_value(new_robot_state, robot_state, goal_pos, hazard_vector, True, True))
             #print(compute_value(new_robot_state, robot_state, goal_pos, hazard_vector, False))
             # episode_reward += compute_value(new_robot_state, robot_state)
             discount *= gamma
@@ -145,7 +145,7 @@ def main(EPISODES, render=False, save_name=None, policy=human_policy, mpc_model=
             steps += 1
             if render:
                 env.render()
-        print(f"Episode {i}, reward {episode_reward}, cost {episode_cost}, steps {steps}")
+        print("Episode {}, reward {}, cost {}, steps {}".format(i, episode_reward, episode_cost, steps))
         total_steps += steps
         dangerous_eps += 1 if episode_cost > 0 else 0
         uncompleted += 0 if steps < 1000 else 1
@@ -160,7 +160,7 @@ if __name__ == "__main__":
     env = Engine(config)
     nn_policy = pickle.load(open("nn_policy2", "rb"))
     mpc_model = pickle.load(open("MPCModels/mpcmodel1", "rb"))
-    seed = 1000
+    seed = 1000  # 1004 ish also super hard
     np.random.seed(seed)
     env.seed(seed)
     render, save_name, policy, mpc_model = True, None, nn_policy, mpc_model

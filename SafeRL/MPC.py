@@ -86,14 +86,14 @@ class MPCLearner:
         parent_trajectories = np.vstack((policy_actions, self.best_trajectories))
         child_trajectories = None
 
-        automatic = True
+        automatic = False
         if automatic:
             sigmas = np.squeeze(np.clip(np.std(policy_actions, axis=1), 1e-2, 1))
             deltas = np.sum(np.abs(policy_actions[:, 1:, :] - policy_actions[:, :-1, :]), axis=1)
             length_scales = np.clip(np.squeeze(self.trajectory_length / (deltas / sigmas)), 1, self.trajectory_length)
         else:
-            sigmas = np.array([0.01, 0.2])
-            length_scales = np.array([20, 20])
+            sigmas = np.array([0.01, 0.1])
+            length_scales = np.array([10, 10])
 
         for i in range(self.n_parents):
             action_sequences = np.repeat(parent_trajectories[i:i+1,:,:], self.no_trajectories/self.n_parents, axis=0)
@@ -209,9 +209,9 @@ class MPCLearner:
             old_robot_states = current_states
         trajectory_avg_costs /= trajectory_length
 
-        avg_cost_limit = self.safety_threshold
+        avg_cost_limit = 0.75 #  self.safety_threshold
         max_cost_limit = 0.85
-        speed_limit = 1.5
+        speed_limit = 0.7
         # Discount all trajectories less safe than limit.
         bad_trajectories1 = np.where(trajectory_avg_costs > avg_cost_limit)
         trajectory_values[bad_trajectories1] = -np.inf
@@ -236,10 +236,8 @@ class MPCLearner:
                 return policy_actions[0, 0], 0
 
         if np.max(trajectory_values) == -np.inf:
-            print("No safe trajectories found. Emergency stop.")
-            """if avg_policy_cost > self.safety_threshold or max_policy_cost > 0.85:
-                print("Base policy also unsafe :(")"""
-            return np.array([0, 0]), 0
+            print("No safe trajectories found. Emergency override.")
+            return policy_actions[0, 0], 0
         else:
             #print("Best: ", mpc_action_sequences[best_trajectory, 0], trajectory_values[best_trajectory], trajectory_avg_costs[best_trajectory],
             #      trajectory_max_costs[best_trajectory])
@@ -355,7 +353,6 @@ def compute_hazard_cost(robot_state, goal_pos, hazards):
     sigma = 0.3
     displacements = hazards - (robot_state[:2]+goal_pos)
     distances = np.einsum('ij,ji->i', displacements, displacements.T)
-    speed_penalty = np.exp(-np.linalg.norm(robot_state[7:9]))
     hazard_rating = np.max(np.exp(-(distances / sigma)**2))
     return hazard_rating
 
@@ -370,10 +367,15 @@ def compute_value(robot_state, old_robot_state, goal_pos, hazards, terminal=Fals
     end_reward = 10 if np.linalg.norm(robot_state[:2]) < 0.2 else 0
     distance_reward2 = robot_state[2] if terminal else 0
     hazard_penalty = compute_hazard_cost(robot_state, goal_pos, hazards) if terminal else 0
+    speed = np.linalg.norm(robot_state[7:9])
+    cos_theta, sin_theta = robot_state[3], robot_state[4]
+    speed_penalty = min(0, -0.01*speed*np.abs(sin_theta))  # Penalise speed away from goal direction
+    angle_penalty = min(0, cos_theta)  # Penalise facing wrong way
     #angle_reward = robot_state[3]*(1-hazard_penalty)  # Encourage aiming for goal away from hazards
     if print_reward:
         print("DEHA", distance_reward, end_reward, hazard_penalty, distance_reward2)
-    return distance_reward+end_reward-hazard_penalty+distance_reward2 #+angle_reward #-angle_penalty
+        print("Distance", np.linalg.norm(robot_state[:2]))
+    return distance_reward+end_reward-hazard_penalty+distance_reward2+angle_penalty+speed_penalty
 
 
 def compute_values(robot_states, old_robot_states, goal_pos, hazards, terminal=False):
