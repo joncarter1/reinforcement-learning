@@ -17,7 +17,7 @@ no_eps = 10
 pe_params = DotMap(name="policy_model_{}".format(no_eps), num_networks=5, sess=None, load_model=None, model_dir="bnn_models")
 pe_model = BNN(pe_params)
 
-state_dims = 10
+state_dims = 30
 action_dims = 2
 
 pe_model.add(FC(200, input_dim=state_dims, activation="swish", weight_decay=0.000025))
